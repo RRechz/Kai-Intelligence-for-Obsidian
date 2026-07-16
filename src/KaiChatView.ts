@@ -1,8 +1,42 @@
 import { ItemView, WorkspaceLeaf, MarkdownRenderer, Notice, setIcon, Modal, App } from 'obsidian';
 import KaiIntelligencePlugin from './main';
-import { GeminiService, AttachmentData } from './GeminiService';
+import { GeminiService, AttachmentData, ChatResponse } from './GeminiService';
+import { t } from './Language';
 
 export const KAI_CHAT_VIEW_TYPE = "kai-chat-view";
+
+class KaiSourcesModal extends Modal {
+    sources: { title: string, uri: string }[];
+
+    constructor(app: App, sources: { title: string, uri: string }[]) {
+        super(app);
+        this.sources = sources;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.createEl('h2', { text: t('modal_sources_title') || 'İnternet Kaynakları' });
+
+        const list = contentEl.createEl('ul', { attr: { style: 'padding-left: 20px;' } });
+        this.sources.forEach(src => {
+            const li = list.createEl('li', { attr: { style: 'margin-bottom: 12px;' } });
+            li.createEl('a', { 
+                text: src.title, 
+                href: src.uri, 
+                attr: { target: '_blank', style: 'color: var(--text-accent); font-weight: 600; text-decoration: none;' } 
+            });
+            li.createEl('div', { 
+                text: src.uri, 
+                attr: { style: 'font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px;' } 
+            });
+        });
+    }
+
+    onClose() {
+        this.contentEl.empty();
+    }
+}
 
 class KaiHistoryModal extends Modal {
     history: any[];
@@ -106,7 +140,7 @@ export class KaiChatView extends ItemView {
         attachmentPreview.style.display = 'none';
 
         this.inputField = inputCard.createEl('textarea', { 
-            placeholder: 'Kai ile konuş...',
+            placeholder: t('chat_placeholder') || 'Kai ile konuş...',
             cls: 'kai-textarea',
             attr: { rows: "1" }
         });
@@ -163,6 +197,7 @@ export class KaiChatView extends ItemView {
             reader.readAsDataURL(file);
         });
         footerLeft.appendChild(fileInput);
+        
         const historyBtn = footerLeft.createEl('span', { cls: 'kai-icon-btn', attr: { title: "Sohbet Geçmişini Görüntüle" } });
         setIcon(historyBtn, 'history');
         historyBtn.addEventListener('click', () => {
@@ -174,12 +209,11 @@ export class KaiChatView extends ItemView {
         clearBtn.addEventListener('click', async () => {
             await this.geminiService.clearHistory();
             this.chatContainer.empty();
-            await this.appendMessage('model', 'Bağlam sıfırlandı. Yeni not üzerinde konuşmaya hazırız!');
-            new Notice("Kai: Geçmiş temizlendi.");
+            await this.appendMessage('model', t('history_cleared_msg') || 'Bağlam sıfırlandı. Yeni not üzerinde konuşmaya hazırız!');
+            new Notice(t('history_cleared_notice') || "Kai: Geçmiş temizlendi.");
         });
 
         const footerRight = inputFooter.createEl('div', { cls: 'kai-footer-right' });
-        footerRight.createEl('span', { text: 'Auto', cls: 'kai-mode-text' });
         const sendButton = footerRight.createEl('button', { cls: 'kai-send-btn' });
         setIcon(sendButton, 'arrow-up');
 
@@ -203,7 +237,7 @@ export class KaiChatView extends ItemView {
             try {
                 const response = await this.geminiService.processChatMessage(text, attachmentToSend || undefined);
                 this.removeLoading(loading);
-                await this.appendMessage('model', response);
+                await this.appendMessage('model', response.text, response.sources);
             } catch (error: any) {
                 this.removeLoading(loading);
                 await this.appendMessage('model', `❌ ${error.message || 'Bir hata oluştu.'}`);
@@ -218,20 +252,60 @@ export class KaiChatView extends ItemView {
                 sendMessage();
             }
         });
-        await this.appendMessage('model', 'Merhaba, ben Kai. İstersen aktif notunun üzerinden konuşabilir veya bana yeni bir soru sorabilirsin. (Geçmiş konuşmalar sol alttaki saat ikonunda)');
+        await this.appendMessage('model', t('chat_welcome') || 'Merhaba, ben Kai. İstersen aktif notunun üzerinden konuşabilir veya bana yeni bir soru sorabilirsin. (Geçmiş konuşmalar sol alttaki saat ikonunda)');
     }
 
-    async appendMessage(role: 'user' | 'model', content: string) {
+    async appendMessage(role: 'user' | 'model', content: string, sources: {title: string, uri: string}[] = []) {
         const messageEl = this.chatContainer.createEl('div', { cls: `kai-message ${role}` });
         
         if (role === 'user') {
             messageEl.createEl('div', { cls: 'kai-bubble user-bubble', text: content });
+            
+            const actions = messageEl.createEl('div', { cls: 'kai-msg-actions user-actions' });
+            const editBtn = actions.createEl('button', { cls: 'kai-action-btn', attr: { title: t('btn_edit') || 'Düzenle' } });
+            setIcon(editBtn, 'pencil');
+
+            editBtn.addEventListener('click', async () => {
+                let nextSibling = messageEl.nextElementSibling;
+                while(nextSibling) {
+                    const toRemove = nextSibling;
+                    nextSibling = nextSibling.nextElementSibling;
+                    toRemove.remove();
+                }
+                messageEl.remove();
+
+                await this.geminiService.popHistoryUntil(content);
+                this.inputField.value = content;
+                this.inputField.focus();
+                this.inputField.style.height = 'auto';
+                this.inputField.style.height = Math.min(this.inputField.scrollHeight, 150) + 'px';
+            });
+            
         } else {
-            const bubble = messageEl.createEl('div', { cls: 'kai-bubble model-bubble' });
+            const contentEl = messageEl.createEl('div', { cls: 'kai-model-content' });
             try {
-                await MarkdownRenderer.render(this.plugin.app, content, bubble, '', this);
+                await MarkdownRenderer.render(this.plugin.app, content, contentEl, '', this);
             } catch {
-                bubble.textContent = content;
+                contentEl.textContent = content;
+            }
+
+            const actions = messageEl.createEl('div', { cls: 'kai-msg-actions model-actions' });
+            
+            const copyBtn = actions.createEl('button', { cls: 'kai-action-btn', attr: { title: t('btn_copy') || 'Kopyala' } });
+            setIcon(copyBtn, 'copy');
+            copyBtn.addEventListener('click', () => {
+                navigator.clipboard.writeText(content);
+                new Notice(t('msg_copied') || 'Panoya kopyalandı');
+            });
+
+            if (sources && sources.length > 0) {
+                const sourceBtn = actions.createEl('button', { cls: 'kai-action-btn sources-btn', attr: { title: t('btn_sources') || 'Kaynaklar' } });
+                setIcon(sourceBtn, 'globe');
+                sourceBtn.createEl('span', { text: ` ${sources.length}` }); 
+                
+                sourceBtn.addEventListener('click', () => {
+                    new KaiSourcesModal(this.plugin.app, sources).open();
+                });
             }
         }
 
@@ -239,12 +313,21 @@ export class KaiChatView extends ItemView {
     }
 
     appendLoading() {
-        const loading = this.chatContainer.createEl('div', { 
-            cls: 'kai-message model loading',
-            text: 'Kai düşünüyor...'
-        });
+        const loadingStr = this.plugin.settings.enableGoogleSearch 
+            ? 'Kai interneti tarıyor' 
+            : (t('chat_thinking') || 'Kai düşünüyor');
+
+        const loadingContainer = this.chatContainer.createEl('div', { cls: 'kai-message model loading-wrapper' });
+        
+        loadingContainer.createEl('span', { text: loadingStr, cls: 'kai-loading-text' });
+        
+        const dots = loadingContainer.createEl('div', { cls: 'kai-typing-dots' });
+        dots.createEl('span');
+        dots.createEl('span');
+        dots.createEl('span');
+        
         this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
-        return loading;
+        return loadingContainer;
     }
 
     removeLoading(loadingEl: HTMLElement) {

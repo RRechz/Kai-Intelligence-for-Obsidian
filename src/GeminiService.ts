@@ -1,5 +1,5 @@
-import { GoogleGenerativeAI, SchemaType, Tool, Part } from '@google/generative-ai';
-import { App, MarkdownView, Notice, Editor } from 'obsidian';
+import { GoogleGenerativeAI, Part } from '@google/generative-ai';
+import { App, MarkdownView, Editor, Notice } from 'obsidian';
 import { KaiSettings } from './Settings';
 
 export interface AttachmentData {
@@ -8,191 +8,150 @@ export interface AttachmentData {
     name: string;
 }
 
+export interface ChatResponse {
+    text: string;
+    sources: { title: string; uri: string }[];
+}
+
 export class GeminiService {
-    private genAI: GoogleGenerativeAI | null = null;
-    private app: App;
-    private settings: KaiSettings;
-    public chatHistory: any[] = [];
-    private saveHistoryCallback: (history: any[]) => Promise<void>;
-    
-    private readonly MAX_HISTORY = 30; 
-    private readonly MAX_NOTE_CHARS_TO_INJECT = 3000; 
-    private readonly MAX_TOOL_ITERATIONS = 3;
+    app: App;
+    settings: KaiSettings;
+    genAI: GoogleGenerativeAI | null = null;
+    chatHistory: any[] = [];
+    MAX_HISTORY = 30;
+    MAX_TOOL_ITERATIONS = 5;
+    saveHistoryCallback: (history: any[]) => Promise<void>;
 
     constructor(app: App, settings: KaiSettings, saveHistoryCallback: (history: any[]) => Promise<void>) {
         this.app = app;
         this.settings = settings;
-        this.saveHistoryCallback = saveHistoryCallback;
         this.chatHistory = settings.chatHistory || [];
+        this.saveHistoryCallback = saveHistoryCallback;
+        if (this.settings.apiKey) {
+            this.genAI = new GoogleGenerativeAI(this.settings.apiKey);
+        }
     }
 
     updateSettings(newSettings: KaiSettings) {
         this.settings = newSettings;
-        this.genAI = new GoogleGenerativeAI(this.settings.apiKey);
+        if (this.settings.apiKey) {
+            this.genAI = new GoogleGenerativeAI(this.settings.apiKey);
+        }
     }
 
-    public async clearHistory(): Promise<void> {
+    getActiveMarkdownView(): MarkdownView | null {
+        return this.app.workspace.getActiveViewOfType(MarkdownView);
+    }
+
+    public async popHistoryUntil(userText: string) {
+        let targetIndex = -1;
+        for (let i = this.chatHistory.length - 1; i >= 0; i--) {
+            if (this.chatHistory[i].role === 'user' && this.chatHistory[i].parts[0].text === userText) {
+                targetIndex = i;
+                break;
+            }
+        }
+        if (targetIndex !== -1) {
+            this.chatHistory = this.chatHistory.slice(0, targetIndex);
+            await this.saveHistoryCallback(this.chatHistory);
+        }
+    }
+
+    async clearHistory() {
         this.chatHistory = [];
         await this.saveHistoryCallback(this.chatHistory);
     }
 
-    private getSafeHistory(): any[] {
-        const safeHistory: any[] = [];
-        
-        for (const msg of this.chatHistory) {
-            const textContent = msg.parts?.map((p: any) => p.text || "").join("").trim();
-            if (!textContent) continue;
-
-            const lastMsg = safeHistory[safeHistory.length - 1];
-            if (lastMsg && lastMsg.role === msg.role) {
-                lastMsg.parts[0].text += `\n\n${textContent}`;
-            } else {
-                safeHistory.push({
-                    role: msg.role === 'model' ? 'model' : 'user', 
-                    parts: [{ text: textContent }]
-                });
-            }
-        }
-        
-        if (safeHistory.length > 0 && safeHistory[0].role === 'model') {
-            safeHistory.shift(); 
-        }
-
-        return safeHistory;
+    getSafeHistory() {
+        return this.chatHistory.map(msg => ({
+            role: msg.role === 'model' ? 'model' : 'user',
+            parts: msg.parts.map((p: any) => ({ text: p.text || "" }))
+        }));
     }
 
-    private getActiveMarkdownView(): MarkdownView | null {
+    private getObsidianTools(): any[] {
+        return [
+            {
+                functionDeclarations: [
+                    {
+                        name: "rewrite_current_note",
+                        description: "Açık olan notun tüm içeriğini yeni metinle değiştirir.",
+                        parameters: {
+                            type: "OBJECT",
+                            properties: {
+                                new_content: { type: "STRING", description: "Notun yeni Markdown içeriği." }
+                            },
+                            required: ["new_content"]
+                        }
+                    },
+                    {
+                        name: "append_to_current_note",
+                        description: "Açık olan notun sonuna yeni metin ekler.",
+                        parameters: {
+                            type: "OBJECT",
+                            properties: {
+                                added_content: { type: "STRING", description: "Eklenecek içerik." }
+                            },
+                            required: ["added_content"]
+                        }
+                    },
+                    {
+                        name: "create_new_note",
+                        description: "Yeni bir Obsidian notu oluşturur.",
+                        parameters: {
+                            type: "OBJECT",
+                            properties: {
+                                title: { type: "STRING", description: "Dosya adı (örn: Yeni Fikirler.md)" },
+                                content: { type: "STRING", description: "Notun içeriği." }
+                            },
+                            required: ["title", "content"]
+                        }
+                    }
+                ]
+            }
+        ];
+    }
+
+    private async executeTool(call: any, activeView: MarkdownView | null): Promise<any> {
+        const args = call.args;
         try {
-            let activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-            if (!activeView) {
-                const markdownLeaves = this.app.workspace.getLeavesOfType("markdown");
-                const firstLeaf = markdownLeaves[0];
-                if (firstLeaf && firstLeaf.view) {
-                    activeView = firstLeaf.view as MarkdownView;
+            if (call.name === "rewrite_current_note" && activeView) {
+                activeView.editor.setValue(args.new_content);
+                return { success: true, message: "Not baştan yazıldı." };
+            } 
+            else if (call.name === "append_to_current_note" && activeView) {
+                const current = activeView.editor.getValue();
+                activeView.editor.setValue(current + "\n\n" + args.added_content);
+                return { success: true, message: "Nota eklendi." };
+            } 
+            else if (call.name === "create_new_note") {
+                let fileName = args.title.endsWith('.md') ? args.title : `${args.title}.md`;
+                let file = this.app.vault.getAbstractFileByPath(fileName);
+                let counter = 1;
+                while (file) {
+                    const nameWithoutExt = fileName.replace('.md', '');
+                    const newName = `${nameWithoutExt} (${counter}).md`;
+                    file = this.app.vault.getAbstractFileByPath(newName);
+                    if (!file) fileName = newName;
+                    counter++;
                 }
+                await this.app.vault.create(fileName, args.content);
+                return { success: true, message: "Not oluşturuldu." };
             }
-            return activeView;
-        } catch (error) {
-            return null;
+            return { success: false, message: "Geçerli bir işlem bulunamadı veya aktif not yok." };
+        } catch (e: any) {
+            return { success: false, error: e.message };
         }
-    }
-
-    private getObsidianTools(): Tool[] {
-        return [{
-            functionDeclarations: [
-                {
-                    name: "append_to_current_note",
-                    description: "Kullanıcının o an açık olan notunun en sonuna yeni bir metin ekler.",
-                    parameters: {
-                        type: SchemaType.OBJECT,
-                        properties: { textToAppend: { type: SchemaType.STRING, description: "Nota eklenecek olan metin." } },
-                        required: ["textToAppend"]
-                    }
-                },
-                {
-                    name: "rewrite_current_note",
-                    description: "Kullanıcının o an açık olan notunun içeriğini tamamen değiştirir.",
-                    parameters: {
-                        type: SchemaType.OBJECT,
-                        properties: { newContent: { type: SchemaType.STRING, description: "Notun yeni tam içeriği." } },
-                        required: ["newContent"]
-                    }
-                },
-                {
-                    name: "create_new_note",
-                    description: "Obsidian kasasında yepyeni bir not dosyası oluşturur.",
-                    parameters: {
-                        type: SchemaType.OBJECT,
-                        properties: {
-                            title: { type: SchemaType.STRING, description: "Yeni notun başlığı." },
-                            content: { type: SchemaType.STRING, description: "Yeni notun içeriği." }
-                        },
-                        required: ["title", "content"]
-                    }
-                }
-            ]
-        }];
     }
 
     private injectContext(userText: string, activeView: MarkdownView | null): string {
         if (!activeView) return userText;
-        
         const noteContent = activeView.editor.getValue();
-        const noteTitle = activeView.file?.basename || "İsimsiz Not";
-        
-        if (noteContent.length <= this.MAX_NOTE_CHARS_TO_INJECT) {
-            return `[Bağlam - "${noteTitle}":\n---\n${noteContent}\n---]\n\nKullanıcı: ${userText}`;
-        }
-
-        const chunks = noteContent.split('\n\n').filter(c => c.trim().length > 0);
-        const queryWords = userText.toLowerCase().replace(/[.,!?]/g, '').split(/\s+/).filter(w => w.length > 3);
-
-        if (queryWords.length === 0) {
-            const head = noteContent.substring(0, 1000);
-            const tail = noteContent.substring(noteContent.length - 1000);
-            return `[Bağlam (Özet) - "${noteTitle}":\n---\n${head}\n...\n${tail}\n---]\n\nKullanıcı: ${userText}`;
-        }
-
-        const scoredChunks = chunks.map(chunk => {
-            const chunkLower = chunk.toLowerCase();
-            const score = queryWords.reduce((acc, word) => chunkLower.includes(word) ? acc + 1 : acc, 0);
-            return { chunk, score };
-        }).filter(item => item.score > 0).sort((a, b) => b.score - a.score);
-
-        let ragContent = "";
-        let currentLength = 0;
-        for (const item of scoredChunks) {
-            if (currentLength + item.chunk.length > this.MAX_NOTE_CHARS_TO_INJECT) break;
-            ragContent += item.chunk + '\n\n...\n\n';
-            currentLength += item.chunk.length;
-        }
-
-        return `[Bağlam (Alakalı Kısımlar) - "${noteTitle}":\n---\n${ragContent}\n---]\n\nKullanıcı: ${userText}`;
+        return `[Aktif Not Bağlamı:\n${noteContent}]\n\nKullanıcı Mesajı: ${userText}`;
     }
 
-    private async executeTool(call: any, activeView: MarkdownView | null): Promise<any> {
-        try {
-            if (call.name === "append_to_current_note") {
-                if (activeView && call.args?.textToAppend) {
-                    const editor = activeView.editor;
-                    const currentLine = editor.lastLine();
-                    editor.replaceRange(`\n\n${call.args.textToAppend}`, { line: currentLine, ch: editor.getLine(currentLine).length });
-                    new Notice("Kai notunuza ekleme yaptı.");
-                    return { success: true, message: "Metin nota başarıyla eklendi." };
-                }
-                return { error: "Aktif bir not bulunamadı veya eklenecek metin boş." };
-            }
-            
-            if (call.name === "rewrite_current_note") {
-                if (activeView && call.args?.newContent) {
-                    activeView.editor.setValue(call.args.newContent);
-                    new Notice("Kai notunuzu baştan yazdı.");
-                    return { success: true, message: "Not başarıyla yeniden yazıldı." };
-                }
-                return { error: "Aktif bir not bulunamadı veya yeni içerik boş." };
-            }
-            
-            if (call.name === "create_new_note") {
-                if (call.args?.title && call.args?.content) {
-                    const fileName = call.args.title.endsWith('.md') ? call.args.title : `${call.args.title}.md`;
-                    if (this.app.vault.getAbstractFileByPath(fileName)) {
-                        return { error: "Bu isimde bir not zaten var." };
-                    }
-                    await this.app.vault.create(fileName, call.args.content);
-                    new Notice(`Kai yeni not oluşturdu: ${call.args.title}`);
-                    return { success: true, message: `Oluşturuldu: ${fileName}` };
-                }
-                return { error: "Başlık veya içerik parametreleri eksik." };
-            }
-
-            return { error: "Bilinmeyen araç çağrısı." };
-        } catch (error: any) {
-            return { error: `Araç çalıştırılırken Obsidian tarafında hata oluştu: ${error.message}` };
-        }
-    }
-
-    async processChatMessage(userText: string, attachment?: AttachmentData): Promise<string> {
-        if (!this.settings.apiKey) throw new Error("Lütfen ayarlardan Gemini API anahtarını girin.");
+    async processChatMessage(userText: string, attachment?: AttachmentData): Promise<ChatResponse> {
+        if (!this.settings.apiKey) throw new Error("API Key eksik.");
         if (!this.genAI) this.genAI = new GoogleGenerativeAI(this.settings.apiKey);
 
         const activeView = this.getActiveMarkdownView();
@@ -207,11 +166,9 @@ export class GeminiService {
         }
 
         const tools: any[] = [...this.getObsidianTools()];
-
         if (this.settings.enableGoogleSearch) {
-            tools.push({ googleSearch: {} });
+            tools.push({ googleSearch: {} }); 
         }
-        
         tools.push({ codeExecution: {} }); 
 
         const model = this.genAI.getGenerativeModel({
@@ -221,7 +178,7 @@ export class GeminiService {
             toolConfig: {
                 includeServerSideToolInvocations: true
             } as any
-        } as any);
+        });
 
         const chatSession = model.startChat({ history: this.getSafeHistory() });
         let response;
@@ -229,7 +186,7 @@ export class GeminiService {
         try {
             response = await chatSession.sendMessage(finalPayload);
         } catch (error: any) {
-            throw new Error(`Gemini API Hatası: ${error.message}`);
+            throw new Error(`API Hatası: ${error.message}`);
         }
         
         let toolExecuted = false;
@@ -252,7 +209,7 @@ export class GeminiService {
                 }]);
                 functionCalls = response.response.functionCalls();
             } catch (apiError: any) {
-                throw new Error(`Araç geri bildirimi sırasında API Hatası: ${apiError.message}`);
+                throw new Error(`Araç Hatası: ${apiError.message}`);
             }
         }
 
@@ -260,7 +217,7 @@ export class GeminiService {
         this.chatHistory = rawHistory.map(msg => ({
             role: msg.role,
             parts: msg.parts.map((p: any) => {
-                if (p.inlineData) return { text: "\n[Kullanıcı bir dosya/görsel ekledi]" };
+                if (p.inlineData) return { text: "\n[Kullanıcı dosya ekledi]" };
                 return p;
             })
         }));
@@ -269,16 +226,22 @@ export class GeminiService {
             this.chatHistory = this.chatHistory.slice(this.chatHistory.length - this.MAX_HISTORY);
         }
         
-        try {
-            await this.saveHistoryCallback(this.chatHistory);
-        } catch (saveError) {
-            console.error("Kai: Geçmiş kaydedilirken bir hata oluştu.", saveError);
-        }
+        await this.saveHistoryCallback(this.chatHistory);
         
+        const groundingMetadata = response.response.candidates?.[0]?.groundingMetadata;
+        let extractedSources: { title: string, uri: string }[] = [];
+        
+        if (groundingMetadata?.groundingChunks) {
+            extractedSources = groundingMetadata.groundingChunks
+                .map((chunk: any) => chunk.web)
+                .filter((web: any) => web && web.uri && web.title);
+        }
+
         const responseText = response.response.text();
-        if (responseText) return responseText;
-        if (toolExecuted) return 'İşlem başarıyla tamamlandı.';
-        return 'Cevap üretilemedi.';
+        return {
+            text: responseText || (toolExecuted ? 'İşlem tamamlandı.' : 'Cevap üretilemedi.'),
+            sources: extractedSources
+        };
     }
 
     async processSelectedText(editor: Editor, action: string, selectedText: string): Promise<void> {

@@ -24,7 +24,12 @@ export const translations = {
         menu_explain: "Kai: Explain",
         menu_fix: "Kai: Fix grammar",
         menu_summarize: "Kai: Summarize",
-        menu_translate: "Kai: Translate (TR/EN)"
+        menu_translate: "Kai: Translate (TR/EN)",
+        btn_copy: "Copy",
+        btn_edit: "Edit",
+        btn_sources: "Web Sources",
+        msg_copied: "Copied to clipboard",
+        modal_sources_title: "Information Sources"
     },
     tr: {
         settings_language: "Dil",
@@ -49,7 +54,12 @@ export const translations = {
         menu_explain: "Kai: Seçimi Açıkla",
         menu_fix: "Kai: Seçimi Düzelt",
         menu_summarize: "Kai: Seçimi Özetle",
-        menu_translate: "Kai: Çevir (TR/EN)"
+        menu_translate: "Kai: Çevir (TR/EN)",
+        btn_copy: "Kopyala",
+        btn_edit: "Düzenle",
+        btn_sources: "Kaynaklar",
+        msg_copied: "Panoya kopyalandı",
+        modal_sources_title: "İnternet Kaynakları"
     },
     es: {
         settings_language: "Idioma",

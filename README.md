@@ -1,3 +1,5 @@
+[![Platform](https://img.shields.io/badge/Obsidian-platform?style=for-the-badge&label=platform&labelColor=21262d&color=6e7681)](https://obsidian.md/) [![Version](https://img.shields.io/badge/1.5.0%2B-level?style=for-the-badge&logo=obsidian&logoColor=3B82F6&label=App%20Version&labelColor=21262d&color=ff663b)](https://obsidian.md/) [![Release](https://img.shields.io/github/v/release/RRechz/Kai-Intelligence-for-Obsidian?display_name=tag&style=for-the-badge&logo=github&labelColor=21262d&color=1f6feb)](https://github.com/RRechz/Kai-Intelligence-for-Obsidian/releases) [![Downloads](https://img.shields.io/github/downloads/RRechz/Kai-Intelligence-for-Obsidian/total)](https://github.com/RRechz/Kai-Intelligence-for-Obsidian/releases)
+
 # Kai Intelligence for Obsidian
 
 Kai Intelligence is a powerful AI assistant plugin for Obsidian that brings conversational intelligence directly into your note-taking workflow. Built with the Google Gemini API, it helps you work with your notes more efficiently by offering context-aware chat, smart text actions, and autonomous note operations.

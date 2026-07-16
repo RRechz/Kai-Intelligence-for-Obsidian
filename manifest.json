@@ -1,7 +1,7 @@
 {
   "id": "kai-intelligence",
   "name": "Kai Intelligence",
-  "version": "0.1.0-beta",
+  "version": "0.2.0-beta",
   "minAppVersion": "1.5.0",
   "description": "An advanced AI assistant plugin for Obsidian, adapted from AirNote's advanced AI system, Kai Intelligence",
   "author": "RRechz",

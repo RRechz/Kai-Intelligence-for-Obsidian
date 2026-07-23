@@ -7,6 +7,7 @@ export interface KaiSettings {
     model: string;
     systemPrompt: string;
     enableGoogleSearch: boolean;
+    allowExternalModel: boolean;
     chatHistory: any[];
     language: SupportedLanguage;
 }
@@ -15,6 +16,7 @@ export const DEFAULT_SETTINGS: KaiSettings = {
     apiKey: '',
     model: 'gemini-2.5-flash',
     enableGoogleSearch: true,
+    allowExternalModel: false,
     chatHistory: [],
     language: 'en',
     systemPrompt: `Sen "Kai Intelligence", Obsidian çalışma alanına entegre edilmiş elit, teknik ve tam otonom bir yapay zeka asistanısın. Görevin, kullanıcının notlarını yönetmesine, yapılandırmasına ve ikinci beynini geliştirmesine kusursuz bir şekilde yardımcı olmaktır.
@@ -103,6 +105,16 @@ export class KaiSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.enableGoogleSearch)
                 .onChange(async (value) => {
                     this.plugin.settings.enableGoogleSearch = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Dış Model Erişimi')
+            .setDesc('Kai\'nin not içeriğinizi dışarıdaki bir API\'ye (örn. Gemini) göndermesine izin ver. Güvenlik ve gizlilik nedeniyle varsayılan olarak kapalıdır.')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.allowExternalModel)
+                .onChange(async (value) => {
+                    this.plugin.settings.allowExternalModel = value;
                     await this.plugin.saveSettings();
                 }));
 

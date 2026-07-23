@@ -27,20 +27,36 @@ export class GeminiService {
         this.settings = settings;
         this.chatHistory = settings.chatHistory || [];
         this.saveHistoryCallback = saveHistoryCallback;
-        if (this.settings.apiKey) {
+        if (this.settings.apiKey && this.settings.allowExternalModel) {
             this.genAI = new GoogleGenerativeAI(this.settings.apiKey);
         }
     }
 
     updateSettings(newSettings: KaiSettings) {
         this.settings = newSettings;
-        if (this.settings.apiKey) {
+        if (this.settings.apiKey && this.settings.allowExternalModel) {
             this.genAI = new GoogleGenerativeAI(this.settings.apiKey);
+        } else {
+            this.genAI = null;
         }
     }
 
     getActiveMarkdownView(): MarkdownView | null {
-        return this.app.workspace.getActiveViewOfType(MarkdownView);
+        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (activeView) {
+            return activeView;
+        }
+
+        const markdownLeaves = this.app.workspace.getLeavesOfType('markdown');
+        for (let i = markdownLeaves.length - 1; i >= 0; i--) {
+            const leaf = markdownLeaves[i];
+            if (!leaf) continue;
+            if (leaf.view instanceof MarkdownView) {
+                return leaf.view;
+            }
+        }
+
+        return null;
     }
 
     public async popHistoryUntil(userText: string) {
@@ -151,11 +167,17 @@ export class GeminiService {
     }
 
     async processChatMessage(userText: string, attachment?: AttachmentData): Promise<ChatResponse> {
+        if (!this.settings.allowExternalModel) throw new Error('Dış model erişimi kapalı. Ayarlar -> Dış Model Erişimi açın.');
         if (!this.settings.apiKey) throw new Error("API Key eksik.");
         if (!this.genAI) this.genAI = new GoogleGenerativeAI(this.settings.apiKey);
 
         const activeView = this.getActiveMarkdownView();
-        const finalMessageText = this.injectContext(userText, activeView);
+        let finalMessageText = this.injectContext(userText, activeView);
+
+        // Eğer prompt bir YouTube isteği ise, sistem komutunu destekle
+        if (userText.includes("[YouTube Video Analizi]:") || userText.includes("youtube.com/watch") || userText.includes("youtu.be/")) {
+            finalMessageText += "\n\n(Sistem Notu: Kullanıcı bir YouTube videosunun analizini istiyor. Lütfen videonun transkriptini, ana hatlarını, önemli zaman damgalarını veya özetini çıkarmak için erişim araçlarını kullan.)";
+        }
         
         let finalPayload: string | Part[] = finalMessageText;
         if (attachment) {
@@ -166,10 +188,14 @@ export class GeminiService {
         }
 
         const tools: any[] = [...this.getObsidianTools()];
+        
+        // Eğer ayarlar üzerinden arama aktifse Google Search tool'unu ekle
         if (this.settings.enableGoogleSearch) {
             tools.push({ googleSearch: {} }); 
         }
-        tools.push({ codeExecution: {} }); 
+        
+        // Kod çalıştırma desteği ekle.
+        tools.push({ codeExecution: {} });
 
         const model = this.genAI.getGenerativeModel({
             model: this.settings.model,
@@ -232,9 +258,16 @@ export class GeminiService {
         let extractedSources: { title: string, uri: string }[] = [];
         
         if (groundingMetadata?.groundingChunks) {
-            extractedSources = groundingMetadata.groundingChunks
-                .map((chunk: any) => chunk.web)
-                .filter((web: any) => web && web.uri && web.title);
+            extractedSources = groundingMetadata.groundingChunks.flatMap((chunk: any) => {
+                const webSource = chunk.web || chunk.source || chunk;
+                if (webSource && webSource.uri) {
+                    return [{
+                        title: webSource.title || webSource.uri,
+                        uri: webSource.uri
+                    }];
+                }
+                return [];
+            });
         }
 
         const responseText = response.response.text();
@@ -245,11 +278,16 @@ export class GeminiService {
     }
 
     async processSelectedText(editor: Editor, action: string, selectedText: string): Promise<void> {
+        if (!this.settings.allowExternalModel) {
+            new Notice("Kai: Dış model erişimi ayarlarda devre dışı. Lütfen Settings -> Dış Model Erişimi'ni açın.");
+            return;
+        }
+
         if (!this.settings.apiKey) {
             new Notice("Kai: Lütfen ayarlardan Gemini API anahtarını girin.");
             return;
         }
-        
+
         if (!this.genAI) this.genAI = new GoogleGenerativeAI(this.settings.apiKey);
 
         const model = this.genAI.getGenerativeModel({

@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf } from 'obsidian';
+import { Plugin, WorkspaceLeaf, MarkdownView } from 'obsidian';
 import { KaiSettings, DEFAULT_SETTINGS, KaiSettingTab } from './Settings';
 import { KaiChatView, KAI_CHAT_VIEW_TYPE } from './KaiChatView';
 import { GeminiService } from './GeminiService';
@@ -30,6 +30,32 @@ export default class KaiIntelligencePlugin extends Plugin {
             name: 'Kai Intelligence Sohbetini Aç',
             callback: () => {
                 this.activateChatView();
+            }
+        });
+
+        this.addCommand({
+            id: 'kai-summarize-selection',
+            name: 'Kai: Seçimi Özetle',
+            callback: async () => {
+                const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+                if (!view) return;
+                const editor = view.editor;
+                const selection = editor.getSelection();
+                if (!selection) return;
+                await this.geminiService.processSelectedText(editor, 'Özetle', selection);
+            }
+        });
+
+        this.addCommand({
+            id: 'kai-fix-selection',
+            name: 'Kai: Seçimi Düzelt',
+            callback: async () => {
+                const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+                if (!view) return;
+                const editor = view.editor;
+                const selection = editor.getSelection();
+                if (!selection) return;
+                await this.geminiService.processSelectedText(editor, 'Düzelt', selection);
             }
         });
 

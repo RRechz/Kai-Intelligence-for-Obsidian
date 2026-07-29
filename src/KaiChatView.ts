@@ -250,7 +250,9 @@ export class KaiChatView extends ItemView {
         tone: 'concise' | 'neutral' | 'detailed';
         includeSources: boolean;
         format: 'markdown' | 'plain';
-    } = { length: 'medium', tone: 'neutral', includeSources: true, format: 'markdown' };
+        task: 'general' | 'summarize' | 'rewrite' | 'explain' | 'translate' | 'brainstorm';
+        style: 'balanced' | 'brief' | 'detailed' | 'creative';
+    } = { length: 'medium', tone: 'neutral', includeSources: true, format: 'markdown', task: 'general', style: 'balanced' };
 
     constructor(leaf: WorkspaceLeaf, plugin: KaiIntelligencePlugin) {
         super(leaf);
@@ -486,6 +488,7 @@ export class KaiChatView extends ItemView {
         });
 
         const footerRight = inputFooter.createEl('div', { cls: 'kai-footer-right' });
+        const taskBadge = footerRight.createEl('span', { cls: 'kai-task-badge', text: 'Genel' });
         const hintText = footerRight.createEl('span', { cls: 'kai-hint-text', text: 'Enter gönderir • Shift+Enter yeni satır' });
         // Options button: opens modal with AI response configuration
         const optionsBtn = footerLeft.createEl('span', { cls: 'kai-icon-btn', attr: { title: "AI Seçenekleri" } });
@@ -493,6 +496,7 @@ export class KaiChatView extends ItemView {
         optionsBtn.addEventListener('click', () => {
             new KaiOptionsModal(this.plugin.app, this.aiOptions, (newOpts) => {
                 this.aiOptions = newOpts;
+                taskBadge.textContent = this.getTaskLabel(this.aiOptions.task);
                 new Notice(t('operation_success') || 'Options updated');
             }).open();
         });
@@ -531,7 +535,9 @@ export class KaiChatView extends ItemView {
                 hints.push(lang === 'tr' ? 'Mümkünse kaynakları göster.' : 'Include sources when available.');
             }
 
-            const finalTextToSend = text ? `${hints.join(' ')}\n\n${text}` : hints.join(' ');
+            const taskInstruction = this.getTaskInstruction(this.aiOptions.task);
+            const styleInstruction = this.getStyleInstruction(this.aiOptions.style);
+            const finalTextToSend = text ? `Task: ${this.aiOptions.task}\nStyle: ${this.aiOptions.style}\n\n${taskInstruction}\n${styleInstruction}\n\n${hints.join(' ')}\n\n${text}` : `Task: ${this.aiOptions.task}\nStyle: ${this.aiOptions.style}\n\n${taskInstruction}\n${styleInstruction}\n\n${hints.join(' ')}`;
 
             const displayMessage = this.currentAttachment ? `[${this.currentAttachment.name}]\n${text}` : text;
             await this.appendMessage('user', displayMessage);
@@ -576,6 +582,30 @@ export class KaiChatView extends ItemView {
         });
         await this.appendMessage('model', t('chat_welcome') || 'Merhaba, ben Kai. İstersen aktif notunun üzerinden konuşabilir veya bana yeni bir soru sorabilirsin. (Geçmiş konuşmalar sol alttaki saat ikonunda)');
         this.renderEmptyState();
+    }
+
+    private getTaskLabel(task: string) {
+        return task === 'summarize' ? 'Özet' : task === 'rewrite' ? 'Düzenle' : task === 'explain' ? 'Açıkla' : task === 'translate' ? 'Çevir' : task === 'brainstorm' ? 'Fikir' : 'Genel';
+    }
+
+    private getTaskInstruction(task: string) {
+        switch (task) {
+            case 'summarize': return 'Bu istek bir özetleme isteği. En önemli noktaları kısa ve net bir şekilde toparla.';
+            case 'rewrite': return 'Bu istek metin düzenleme isteği. Metni akıcı, doğru ve anlaşılır hale getir.';
+            case 'explain': return 'Bu istek açıklama isteği. Konuyu anlaşılır bir düzenle açıkla.';
+            case 'translate': return 'Bu istek çeviri isteği. Metni doğal ve doğru şekilde hedef dile çevir.';
+            case 'brainstorm': return 'Bu istek fikir üretme isteği. Birkaç farklı seçenek sun.';
+            default: return 'Bu genel bir istek. İsteği doğru şekilde anla ve uygun şekilde cevap ver.';
+        }
+    }
+
+    private getStyleInstruction(style: string) {
+        switch (style) {
+            case 'brief': return 'Cevap kısa ve öz olsun.';
+            case 'detailed': return 'Cevap ayrıntılı ve kapsamlı olsun.';
+            case 'creative': return 'Cevap yaratıcı ve ilham verici olsun.';
+            default: return 'Cevap dengeli, net ve kullanışlı olsun.';
+        }
     }
 
     async appendMessage(role: 'user' | 'model', content: string, sources: {title: string, uri: string}[] = []) {

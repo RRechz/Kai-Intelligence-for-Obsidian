@@ -166,13 +166,51 @@ export class GeminiService {
         return `[Aktif Not Bağlamı:\n${noteContent}]\n\nKullanıcı Mesajı: ${userText}`;
     }
 
+    private buildBehaviorInstruction(userText: string): string {
+        const taskMatch = userText.match(/Task:\s*([a-zA-Z_]+)/i);
+        const styleMatch = userText.match(/Style:\s*([a-zA-Z_]+)/i);
+
+        const task = taskMatch?.[1]?.toLowerCase();
+        const style = styleMatch?.[1]?.toLowerCase();
+
+        const instructions: string[] = [];
+
+        if (task === 'summarize') {
+            instructions.push('Bu istekte önemli noktaları kısa, net ve yapılandırılmış şekilde özetle.');
+        } else if (task === 'rewrite') {
+            instructions.push('Bu istekte metni düzelt, akıcı hale getir ve gereksiz tekrarları kaldır.');
+        } else if (task === 'explain') {
+            instructions.push('Bu istekte konuyu anlaşılır bir şekilde açıkla ve gerekirse adım adım anlat.');
+        } else if (task === 'translate') {
+            instructions.push('Bu istekte metni doğru ve doğal bir şekilde hedef dile çevir.');
+        } else if (task === 'brainstorm') {
+            instructions.push('Bu istekte birkaç farklı seçenek veya fikir sun ve en iyi yaklaşımı vurgula.');
+        }
+
+        if (style === 'brief' || style === 'concise') {
+            instructions.push('Cevabın kısa, öz ve doğrudan olsun.');
+        } else if (style === 'detailed') {
+            instructions.push('Cevabın ayrıntılı, açıklayıcı ve kapsamlı olsun.');
+        } else if (style === 'creative') {
+            instructions.push('Cevabın yaratıcı, ilham verici ve daha özgün bir ifade tarzında olsun.');
+        } else {
+            instructions.push('Cevabın dengeli, net ve kullanışlı olsun.');
+        }
+
+        return instructions.join(' ');
+    }
+
     async processChatMessage(userText: string, attachment?: AttachmentData): Promise<ChatResponse> {
         if (!this.settings.allowExternalModel) throw new Error('Dış model erişimi kapalı. Ayarlar -> Dış Model Erişimi açın.');
         if (!this.settings.apiKey) throw new Error("API Key eksik.");
         if (!this.genAI) this.genAI = new GoogleGenerativeAI(this.settings.apiKey);
 
         const activeView = this.getActiveMarkdownView();
+        const behaviorInstruction = this.buildBehaviorInstruction(userText);
         let finalMessageText = this.injectContext(userText, activeView);
+        if (behaviorInstruction) {
+            finalMessageText = `${behaviorInstruction}\n\n${finalMessageText}`;
+        }
 
         // Eğer prompt bir YouTube isteği ise, sistem komutunu destekle
         if (userText.includes("[YouTube Video Analizi]:") || userText.includes("youtube.com/watch") || userText.includes("youtu.be/")) {

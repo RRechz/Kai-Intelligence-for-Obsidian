@@ -399,44 +399,73 @@ export class GeminiService {
         };
     }
 
-    async processSelectedText(editor: Editor, action: string, selectedText: string): Promise<void> {
+    async generateSelectionTransform(action: string, selectedText: string, outputFormat: string = 'replace'): Promise<string> {
         if (!this.settings.allowExternalModel) {
-            new Notice("Kai: Dış model erişimi ayarlarda devre dışı. Lütfen Settings -> Dış Model Erişimi'ni açın.");
-            return;
+            throw new Error('Dış model erişimi kapalı. Ayarlar -> Dış Model Erişimi açın.');
         }
 
         if (!this.settings.apiKey) {
-            new Notice("Kai: Lütfen ayarlardan Gemini API anahtarını girin.");
-            return;
+            throw new Error('Lütfen ayarlardan Gemini API anahtarını girin.');
         }
 
         if (!this.genAI) this.genAI = new GoogleGenerativeAI(this.settings.apiKey);
 
+        const activeView = this.getActiveMarkdownView();
+        const noteContext = activeView?.editor.getValue().trim() ? `\n\nAktif not bağlamı:\n${activeView.editor.getValue().slice(0, 2500)}` : '';
+
         const model = this.genAI.getGenerativeModel({
             model: this.settings.model,
-            systemInstruction: "Sen profesyonel bir editörsün. Sadece istenen işlemi yap ve gereksiz açıklama ekleme. Markdown formatını koru."
+            systemInstruction: "Sen profesyonel bir editör ve içerik düzenleyicisin. Sadece istenen işlemi yap, gereksiz açıklama ekleme ve sonucu net bir biçimde ver."
         });
 
-        let prompt = "";
-        if (action === "Düzelt") prompt = `Aşağıdaki metnin dilbilgisini, noktalama işaretlerini ve akıcılığını düzelt, Markdown formatını bozma:\n\n${selectedText}`;
-        else if (action === "Özetle") prompt = `Aşağıdaki metni kısaca özetle:\n\n${selectedText}`;
-        else if (action === "Çevir") prompt = `Aşağıdaki metin Türkçeyse İngilizceye, İngilizceyse Türkçeye (veya uygun şekilde) çevir:\n\n${selectedText}`;
-        else if (action === "Açıkla") prompt = `Aşağıdaki metni karmaşık terimlerden arındırarak, detaylı ama anlaşılır bir dille açıkla:\n\n${selectedText}`;
+        let prompt = '';
+        const normalizedOutput = outputFormat.toLowerCase();
 
+        if (action === 'Düzelt') {
+            prompt = `Aşağıdaki metnin dilbilgisini, noktalama işaretlerini ve akıcılığını düzelt. Sonucu yalnızca düzeltilmiş metin olarak ver.\n\n${selectedText}${noteContext}`;
+        } else if (action === 'Özetle') {
+            prompt = `Aşağıdaki metni kısa ve net bir özet halinde yaz.\n\n${selectedText}${noteContext}`;
+        } else if (action === 'Çevir') {
+            prompt = `Aşağıdaki metni doğal ve doğru bir şekilde hedef dile çevir.\n\n${selectedText}${noteContext}`;
+        } else if (action === 'Açıkla') {
+            prompt = `Aşağıdaki metni anlaşılır, detaylı ve sade bir dille açıkla.\n\n${selectedText}${noteContext}`;
+        } else if (action === 'Kısalt') {
+            prompt = `Aşağıdaki metni çok daha kısa, öz ve akıcı bir versiyona indir.\n\n${selectedText}${noteContext}`;
+        } else if (action === 'Resmileştir') {
+            prompt = `Aşağıdaki metni daha resmi, profesyonel ve akıcı bir tona getir.\n\n${selectedText}${noteContext}`;
+        } else if (action === 'Maddeye Dönüştür') {
+            prompt = `Aşağıdaki metni kısa madde maddeler halinde düzenle.\n\n${selectedText}${noteContext}`;
+        } else if (action === 'E-posta Haline Getir') {
+            prompt = `Aşağıdaki metni kısa ve profesyonel bir e-posta metnine dönüştür.\n\n${selectedText}${noteContext}`;
+        } else if (action === 'Not Taslağına Dönüştür') {
+            prompt = `Aşağıdaki metni temiz bir not taslağına dönüştür. Başlıklar, maddeler ve kısa açıklamalar kullan.\n\n${selectedText}${noteContext}`;
+        } else {
+            prompt = `Aşağıdaki metni istenen şekilde düzenle.\n\n${selectedText}${noteContext}`;
+        }
+
+        if (normalizedOutput === 'bullets') {
+            prompt += '\n\nSonucu yalnızca madde listesi olarak ver.';
+        } else if (normalizedOutput === 'markdown') {
+            prompt += '\n\nSonucu Markdown formatında ver.';
+        } else if (normalizedOutput === 'email') {
+            prompt += '\n\nSonucu profesyonel bir e-posta metni olarak ver.';
+        } else if (normalizedOutput === 'notes') {
+            prompt += '\n\nSonucu kısa başlıklar ve maddelerle bir not taslağı şeklinde ver.';
+        }
+
+        const response = await model.generateContent(prompt);
+        return response.response.text().trim();
+    }
+
+    async processSelectedText(editor: Editor, action: string, selectedText: string, outputFormat: string = 'replace'): Promise<void> {
         try {
-            const response = await model.generateContent(prompt);
-            const resultText = response.response.text();
-
+            const resultText = await this.generateSelectionTransform(action, selectedText, outputFormat);
             if (resultText) {
-                if (action === "Düzelt") {
-                    editor.replaceSelection(resultText);
-                } else {
-                    editor.replaceSelection(`${selectedText}\n\n**Kai (${action}):**\n${resultText}`);
-                }
+                editor.replaceSelection(resultText);
                 new Notice(`Kai: İşlem başarıyla tamamlandı (${action}).`);
             }
         } catch (error: any) {
-            new Notice(`Kai Hatası: İşlem tamamlanamadı.`);
+            new Notice(`Kai Hatası: ${error.message || 'İşlem tamamlanamadı.'}`);
         }
     }
 }

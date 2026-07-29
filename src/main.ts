@@ -78,37 +78,24 @@ export default class KaiIntelligencePlugin extends Plugin {
                     
                     menu.addSeparator();
 
-                    // 2. Explain
-                    menu.addItem((item) => {
-                        item
-                            .setTitle(t('menu_explain') || 'Kai: Açıkla')
-                            .setIcon('book-open')
-                            .onClick(() => this.geminiService.processSelectedText(editor, 'Açıkla', selection));
-                    });
+                    const createSelectionAction = (title: string, icon: string, action: string, outputFormat: string = 'replace') => {
+                        menu.addItem((item) => {
+                            item
+                                .setTitle(title)
+                                .setIcon(icon)
+                                .onClick(() => this.geminiService.processSelectedText(editor, action, selection, outputFormat));
+                        });
+                    };
 
-                    // 3. Fix
-                    menu.addItem((item) => {
-                        item
-                            .setTitle(t('menu_fix') || 'Kai: Düzelt')
-                            .setIcon('wand-2')
-                            .onClick(() => this.geminiService.processSelectedText(editor, 'Düzelt', selection));
-                    });
-
-                    // 4. Summarize
-                    menu.addItem((item) => {
-                        item
-                            .setTitle(t('menu_summarize') || 'Kai: Özetle')
-                            .setIcon('list')
-                            .onClick(() => this.geminiService.processSelectedText(editor, 'Özetle', selection));
-                    });
-
-                    // 5. Translate
-                    menu.addItem((item) => {
-                        item
-                            .setTitle(t('menu_translate') || 'Kai: Çevir')
-                            .setIcon('languages')
-                            .onClick(() => this.geminiService.processSelectedText(editor, 'Çevir', selection));
-                    });
+                    createSelectionAction(t('menu_explain') || 'Kai: Açıkla', 'book-open', 'Açıkla');
+                    createSelectionAction(t('menu_fix') || 'Kai: Düzelt', 'wand-2', 'Düzelt');
+                    createSelectionAction(t('menu_summarize') || 'Kai: Özetle', 'list', 'Özetle');
+                    createSelectionAction(t('menu_translate') || 'Kai: Çevir', 'languages', 'Çevir');
+                    createSelectionAction('Kai: Kısalt', 'chevrons-down', 'Kısalt');
+                    createSelectionAction('Kai: Resmileştir', 'sparkles', 'Resmileştir');
+                    createSelectionAction('Kai: Maddeye Dönüştür', 'list-plus', 'Maddeye Dönüştür', 'bullets');
+                    createSelectionAction('Kai: E-posta Haline Getir', 'mail', 'E-posta Haline Getir', 'email');
+                    createSelectionAction('Kai: Not Taslağına Dönüştür', 'file-text', 'Not Taslağına Dönüştür', 'notes');
                 }
             })
         );

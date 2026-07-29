@@ -501,6 +501,53 @@
     padding-left: 2px;
 }
 
+.kai-empty-state {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 18px;
+    margin: 6px 0 16px;
+    border: 1px dashed var(--background-modifier-border);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--background-secondary) 80%, transparent);
+}
+
+.kai-empty-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-normal);
+}
+
+.kai-empty-description {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.kai-empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 2px;
+}
+
+.kai-empty-action-btn {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 999px;
+    padding: 6px 10px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    cursor: pointer;
+    font-size: 12px;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+.kai-empty-action-btn:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--interactive-accent);
+}
+
 .kai-settings-intro {
     margin: 4px 0 12px;
     color: var(--text-muted);

@@ -243,6 +243,7 @@ export class KaiChatView extends ItemView {
     chatContainer!: HTMLElement;
     inputField!: HTMLTextAreaElement;
     sendButton?: HTMLButtonElement;
+    emptyStateEl?: HTMLElement;
     currentAttachment: AttachmentData | null = null;
     aiOptions: {
         length: 'short' | 'medium' | 'long';
@@ -289,6 +290,39 @@ export class KaiChatView extends ItemView {
 
     private formatTimestamp(date: Date = new Date()): string {
         return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    private removeEmptyState() {
+        this.emptyStateEl?.remove();
+        this.emptyStateEl = undefined;
+    }
+
+    private renderEmptyState() {
+        if (!this.chatContainer || this.emptyStateEl?.isConnected) return;
+
+        this.emptyStateEl = this.chatContainer.createEl('div', { cls: 'kai-empty-state' });
+        this.emptyStateEl.createEl('div', { cls: 'kai-empty-title', text: 'Başlayalım' });
+        this.emptyStateEl.createEl('div', { cls: 'kai-empty-description', text: 'Notunu özetle, bir soruyu açıkla ya da kısa bir metin taslağı oluştur.' });
+
+        const actions = this.emptyStateEl.createEl('div', { cls: 'kai-empty-actions' });
+        const prompts = [
+            { label: 'Özetle', value: 'Bu notu kısa ve net bir özet halinde toparla.' },
+            { label: 'Açıkla', value: 'Bu metni kolay anlaşılır bir dille açıkla.' },
+            { label: 'Düzenle', value: 'Bu metni daha profesyonel ve akıcı bir tona dönüştür.' }
+        ];
+
+        prompts.forEach((prompt) => {
+            const action = actions.createEl('button', { cls: 'kai-empty-action-btn' });
+            action.textContent = prompt.label;
+            action.addEventListener('click', () => {
+                this.inputField.value = prompt.value;
+                this.inputField.focus();
+                this.inputField.setSelectionRange(this.inputField.value.length, this.inputField.value.length);
+                this.inputField.style.height = 'auto';
+                this.inputField.style.height = Math.min(this.inputField.scrollHeight, 150) + 'px';
+                this.updateSendButtonState(this.sendButton);
+            });
+        });
     }
 
     // ================== AI ÖNERİLERİ RENDER FONKSİYONU ==================
@@ -372,6 +406,10 @@ export class KaiChatView extends ItemView {
             attr: { rows: "1" }
         });
 
+        window.setTimeout(() => {
+            this.inputField?.focus();
+        }, 60);
+
         const updateSendButtonState = () => this.updateSendButtonState(this.sendButton);
 
         this.inputField.addEventListener('input', () => {
@@ -441,7 +479,9 @@ export class KaiChatView extends ItemView {
         clearBtn.addEventListener('click', async () => {
             await this.geminiService.clearHistory();
             this.chatContainer.empty();
+            this.removeEmptyState();
             await this.appendMessage('model', t('history_cleared_msg') || 'Bağlam sıfırlandı. Yeni not üzerinde konuşmaya hazırız!');
+            this.renderEmptyState();
             new Notice(t('history_cleared_notice') || "Kai: Geçmiş temizlendi.");
         });
 
@@ -521,15 +561,25 @@ export class KaiChatView extends ItemView {
         updateSendButtonState();
 
         this.inputField.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                this.inputField.value = '';
+                this.inputField.style.height = 'auto';
+                this.inputField.style.height = Math.min(this.inputField.scrollHeight, 150) + 'px';
+                this.updateSendButtonState(this.sendButton);
+                return;
+            }
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
             }
         });
         await this.appendMessage('model', t('chat_welcome') || 'Merhaba, ben Kai. İstersen aktif notunun üzerinden konuşabilir veya bana yeni bir soru sorabilirsin. (Geçmiş konuşmalar sol alttaki saat ikonunda)');
+        this.renderEmptyState();
     }
 
     async appendMessage(role: 'user' | 'model', content: string, sources: {title: string, uri: string}[] = []) {
+        this.removeEmptyState();
         const messageEl = this.chatContainer.createEl('div', { cls: `kai-message ${role}` });
         const bubble = messageEl.createEl('div', { cls: `kai-bubble ${role === 'user' ? 'user-bubble' : 'model-bubble'}` });
 

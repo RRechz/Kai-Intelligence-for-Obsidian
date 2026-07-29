@@ -166,13 +166,64 @@ export class GeminiService {
         return `[Aktif Not Bağlamı:\n${noteContent}]\n\nKullanıcı Mesajı: ${userText}`;
     }
 
-    private buildBehaviorInstruction(userText: string): string {
-        const taskMatch = userText.match(/Task:\s*([a-zA-Z_]+)/i);
-        const styleMatch = userText.match(/Style:\s*([a-zA-Z_]+)/i);
+    private inferTaskAndStyle(userText: string, activeView: MarkdownView | null): { task: string; style: string } {
+        const explicitTaskMatch = userText.match(/Task:\s*([a-zA-Z_]+)/i);
+        const explicitStyleMatch = userText.match(/Style:\s*([a-zA-Z_]+)/i);
+        const normalized = userText.toLowerCase();
 
-        const task = taskMatch?.[1]?.toLowerCase();
-        const style = styleMatch?.[1]?.toLowerCase();
+        const explicitTask = explicitTaskMatch?.[1]?.toLowerCase();
+        const explicitStyle = explicitStyleMatch?.[1]?.toLowerCase();
 
+        if (explicitTask) {
+            return { task: explicitTask, style: explicitStyle || this.settings.aiPreferences.preferredStyle || 'balanced' };
+        }
+
+        let inferredTask = 'general';
+        let inferredStyle = this.settings.aiPreferences.preferredStyle || 'balanced';
+
+        if (this.settings.aiPreferences.autoDetectTask) {
+            if (/\b(özet|summary|kısa özet|kısaca|short summary|summarize|summary)\b/i.test(normalized)) {
+                inferredTask = 'summarize';
+            } else if (/\b(düzelt|fix|improve|rewrite|yeniden yaz|edit|geliştir|düzenle)\b/i.test(normalized)) {
+                inferredTask = 'rewrite';
+            } else if (/\b(açıkla|explain|neden|what is|what does|anlat|clarify|anlama)\b/i.test(normalized)) {
+                inferredTask = 'explain';
+            } else if (/\b(çevir|translate|translation|tercüme)\b/i.test(normalized)) {
+                inferredTask = 'translate';
+            } else if (/\b(fikir|brainstorm|idea|alternatif|options|seçenek)\b/i.test(normalized)) {
+                inferredTask = 'brainstorm';
+            } else if (activeView) {
+                const noteContent = activeView.editor.getValue();
+                const looksLikeCode = /```|^\s*(function|class|const|let|var|import|export|def|if|for|while|return)\b/m.test(noteContent);
+                const isStructuredNote = /^\s{0,3}(#{1,6}\s|[-*]\s|\d+\.\s)/m.test(noteContent);
+                if (looksLikeCode) {
+                    inferredTask = 'explain';
+                } else if (isStructuredNote && /\b(özet|kısa|ana|özetle|notu)\b/i.test(normalized)) {
+                    inferredTask = 'summarize';
+                }
+            }
+        }
+
+        if (/\b(kısa|öz|brief|concise|short)\b/i.test(normalized)) {
+            inferredStyle = 'brief';
+        } else if (/\b(detaylı|detailed|ayrıntılı|kapsamlı|comprehensive|adım adım)\b/i.test(normalized)) {
+            inferredStyle = 'detailed';
+        } else if (/\b(yaratıcı|creative|ilham verici|inspirational)\b/i.test(normalized)) {
+            inferredStyle = 'creative';
+        }
+
+        if (this.settings.aiPreferences.rememberPreferences && inferredTask === 'general' && this.settings.aiPreferences.preferredTask !== 'general') {
+            inferredTask = this.settings.aiPreferences.preferredTask;
+        }
+
+        if (this.settings.aiPreferences.rememberPreferences && inferredStyle === this.settings.aiPreferences.preferredStyle && inferredStyle !== 'balanced') {
+            inferredStyle = this.settings.aiPreferences.preferredStyle;
+        }
+
+        return { task: inferredTask, style: inferredStyle };
+    }
+
+    private buildBehaviorInstruction(task: string, style: string): string {
         const instructions: string[] = [];
 
         if (task === 'summarize') {
@@ -187,7 +238,7 @@ export class GeminiService {
             instructions.push('Bu istekte birkaç farklı seçenek veya fikir sun ve en iyi yaklaşımı vurgula.');
         }
 
-        if (style === 'brief' || style === 'concise') {
+        if (style === 'brief') {
             instructions.push('Cevabın kısa, öz ve doğrudan olsun.');
         } else if (style === 'detailed') {
             instructions.push('Cevabın ayrıntılı, açıklayıcı ve kapsamlı olsun.');
@@ -200,16 +251,49 @@ export class GeminiService {
         return instructions.join(' ');
     }
 
+    private getFileContextInstruction(activeView: MarkdownView | null, task: string): string {
+        if (!activeView) return '';
+        const noteContent = activeView.editor.getValue();
+        if (!noteContent.trim()) return '';
+
+        const looksLikeCode = /```|^\s*(function|class|const|let|var|import|export|def|if|for|while|return)\b/m.test(noteContent);
+        const isStructuredNote = /^\s{0,3}(#{1,6}\s|[-*]\s|\d+\.\s)/m.test(noteContent);
+
+        if (looksLikeCode) {
+            return 'Aktif not teknik veya kod odaklı görünüyor; cevapta kısa açıklamalar, örnekler ve adım adım rehberlik kullan.';
+        }
+        if (isStructuredNote && (task === 'summarize' || task === 'rewrite')) {
+            return 'Aktif not yapılandırılmış bir Markdown notu gibi görünüyor; cevabı başlıklar ve maddelerle sun.';
+        }
+        return 'Aktif notun bağlamını koruyarak cevap ver.';
+    }
+
+    private persistPreferredBehavior(task: string, style: string) {
+        if (!this.settings.aiPreferences.rememberPreferences) return;
+        if (task !== 'general') {
+            this.settings.aiPreferences.preferredTask = task as any;
+        }
+        if (style !== 'balanced') {
+            this.settings.aiPreferences.preferredStyle = style as any;
+        }
+        this.saveHistoryCallback(this.chatHistory).catch(() => undefined);
+    }
+
     async processChatMessage(userText: string, attachment?: AttachmentData): Promise<ChatResponse> {
         if (!this.settings.allowExternalModel) throw new Error('Dış model erişimi kapalı. Ayarlar -> Dış Model Erişimi açın.');
         if (!this.settings.apiKey) throw new Error("API Key eksik.");
         if (!this.genAI) this.genAI = new GoogleGenerativeAI(this.settings.apiKey);
 
         const activeView = this.getActiveMarkdownView();
-        const behaviorInstruction = this.buildBehaviorInstruction(userText);
+        const detectedBehavior = this.inferTaskAndStyle(userText, activeView);
+        const behaviorInstruction = this.buildBehaviorInstruction(detectedBehavior.task, detectedBehavior.style);
+        const fileInstruction = this.getFileContextInstruction(activeView, detectedBehavior.task);
+        this.persistPreferredBehavior(detectedBehavior.task, detectedBehavior.style);
+
         let finalMessageText = this.injectContext(userText, activeView);
-        if (behaviorInstruction) {
-            finalMessageText = `${behaviorInstruction}\n\n${finalMessageText}`;
+        const extraInstructions = [behaviorInstruction, fileInstruction].filter(Boolean);
+        if (extraInstructions.length > 0) {
+            finalMessageText = `${extraInstructions.join('\n\n')}\n\n${finalMessageText}`;
         }
 
         // Eğer prompt bir YouTube isteği ise, sistem komutunu destekle

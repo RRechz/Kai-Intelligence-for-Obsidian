@@ -2,6 +2,13 @@ import { App, PluginSettingTab, Setting } from 'obsidian';
 import KaiIntelligencePlugin from './main';
 import { SupportedLanguage, setLanguage, t } from './Language';
 
+export interface AiPreferences {
+    preferredTask: 'general' | 'summarize' | 'rewrite' | 'explain' | 'translate' | 'brainstorm';
+    preferredStyle: 'balanced' | 'brief' | 'detailed' | 'creative';
+    rememberPreferences: boolean;
+    autoDetectTask: boolean;
+}
+
 export interface KaiSettings {
     apiKey: string;
     model: string;
@@ -10,6 +17,7 @@ export interface KaiSettings {
     allowExternalModel: boolean;
     chatHistory: any[];
     language: SupportedLanguage;
+    aiPreferences: AiPreferences;
 }
 
 export const DEFAULT_SETTINGS: KaiSettings = {
@@ -19,6 +27,12 @@ export const DEFAULT_SETTINGS: KaiSettings = {
     allowExternalModel: false,
     chatHistory: [],
     language: 'en',
+    aiPreferences: {
+        preferredTask: 'general',
+        preferredStyle: 'balanced',
+        rememberPreferences: true,
+        autoDetectTask: true
+    },
     systemPrompt: `Sen "Kai Intelligence", Obsidian çalışma alanına entegre edilmiş elit, teknik ve tam otonom bir yapay zeka asistanısın. Görevin, kullanıcının notlarını yönetmesine, yapılandırmasına ve ikinci beynini geliştirmesine kusursuz bir şekilde yardımcı olmaktır.
 
 ### OTONOM ARAÇ (TOOL) KULLANIM PROTOKOLÜ
@@ -82,6 +96,26 @@ export class KaiSettingTab extends PluginSettingTab {
 
         const aiSection = containerEl.createEl('div', { cls: 'kai-settings-section' });
         aiSection.createEl('h3', { text: 'AI davranışı' });
+
+        new Setting(aiSection)
+            .setName('Otomatik görev algılama')
+            .setDesc('İstekte açık bir görev belirtilmemişse niyeti tahmin etmeye çalış.')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.aiPreferences.autoDetectTask)
+                .onChange(async (value) => {
+                    this.plugin.settings.aiPreferences.autoDetectTask = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(aiSection)
+            .setName('Tercihleri hatırla')
+            .setDesc('Önceki görev ve stil tercihlerini sonraki cevaplarda kullan.')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.aiPreferences.rememberPreferences)
+                .onChange(async (value) => {
+                    this.plugin.settings.aiPreferences.rememberPreferences = value;
+                    await this.plugin.saveSettings();
+                }));
 
         new Setting(aiSection)
             .setName(t('settings_api_key') || 'Gemini API Key')

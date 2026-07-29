@@ -50,16 +50,34 @@
     width: 100%;
 }
 
+.kai-message {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+
+.kai-message.user {
+    align-items: flex-end;
+}
+
+.kai-message.model {
+    align-items: flex-start;
+}
+
 .kai-bubble {
     max-width: 85%;
-    padding: 13px 17px;
+    padding: 12px 14px;
     border-radius: 18px;
     line-height: 1.5;
     font-size: 15px;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .user-bubble {
-    background-color: var(--interactive-accent);
+    background: linear-gradient(135deg, var(--interactive-accent) 0%, color-mix(in srgb, var(--interactive-accent) 80%, var(--text-on-accent)) 100%);
     color: var(--text-on-accent);
     margin-left: auto;
     border-bottom-right-radius: 6px;
@@ -70,6 +88,29 @@
     border: 1px solid var(--background-modifier-border);
     border-bottom-left-radius: 6px;
     color: var(--text-normal);
+}
+
+.kai-bubble-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    opacity: 0.78;
+    letter-spacing: 0.01em;
+}
+
+.kai-bubble-content {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.kai-bubble-content p:first-child {
+    margin-top: 0;
+}
+
+.kai-bubble-content p:last-child {
+    margin-bottom: 0;
 }
 
 /* ====================== AI SUGGESTIONS ====================== */
@@ -244,6 +285,13 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.kai-hint-text {
+    font-size: 11px;
+    color: var(--text-muted);
 }
 
 .kai-footer-left {
@@ -284,15 +332,21 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 30px;
+    height: 30px;
     border-radius: 50%;
     background-color: var(--background-modifier-hover);
     color: var(--text-muted);
-    border: none;
+    border: 1px solid transparent;
     cursor: pointer;
     padding: 0;
-    transition: background-color 0.2s, color 0.2s;
+    transition: background-color 0.2s, color 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+
+.kai-send-btn.is-ready {
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    box-shadow: 0 8px 18px color-mix(in srgb, var(--interactive-accent) 26%, transparent);
 }
 
 .kai-input-card:focus-within .kai-send-btn {
@@ -301,7 +355,15 @@
 }
 
 .kai-send-btn:hover {
-    opacity: 0.85;
+    opacity: 0.9;
+    transform: translateY(-1px);
+}
+
+.kai-send-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
 }
 
 .loading {
@@ -437,6 +499,29 @@
     font-size: 13px;
     margin-bottom: 24px;
     padding-left: 2px;
+}
+
+.kai-settings-intro {
+    margin: 4px 0 12px;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.kai-settings-section {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    background: var(--background-secondary);
+}
+
+.kai-settings-section h3 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
 }
 
 .kai-loading-text {

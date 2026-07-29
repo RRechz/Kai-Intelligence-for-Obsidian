@@ -242,6 +242,7 @@ export class KaiChatView extends ItemView {
     geminiService: GeminiService;
     chatContainer!: HTMLElement;
     inputField!: HTMLTextAreaElement;
+    sendButton?: HTMLButtonElement;
     currentAttachment: AttachmentData | null = null;
     aiOptions: {
         length: 'short' | 'medium' | 'long';
@@ -275,6 +276,19 @@ export class KaiChatView extends ItemView {
             this.inputField.style.height = 'auto';
             this.inputField.style.height = Math.min(this.inputField.scrollHeight, 150) + 'px';
         }
+    }
+
+    private updateSendButtonState(sendButton?: HTMLButtonElement) {
+        const hasContent = this.inputField?.value.trim().length > 0 || !!this.currentAttachment;
+        const target = sendButton ?? this.sendButton;
+        if (target) {
+            target.disabled = !hasContent;
+            target.classList.toggle('is-ready', hasContent);
+        }
+    }
+
+    private formatTimestamp(date: Date = new Date()): string {
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
 
     // ================== AI ÖNERİLERİ RENDER FONKSİYONU ==================
@@ -358,9 +372,12 @@ export class KaiChatView extends ItemView {
             attr: { rows: "1" }
         });
 
+        const updateSendButtonState = () => this.updateSendButtonState(this.sendButton);
+
         this.inputField.addEventListener('input', () => {
             this.inputField.style.height = 'auto';
             this.inputField.style.height = Math.min(this.inputField.scrollHeight, 150) + 'px';
+            updateSendButtonState();
         });
 
         const inputFooter = inputCard.createEl('div', { cls: 'kai-input-footer' });
@@ -405,7 +422,9 @@ export class KaiChatView extends ItemView {
                     this.currentAttachment = null;
                     attachmentPreview.style.display = 'none';
                     fileInput.value = '';
+                    updateSendButtonState();
                 });
+                updateSendButtonState();
             };
             reader.readAsDataURL(file);
         });
@@ -427,6 +446,7 @@ export class KaiChatView extends ItemView {
         });
 
         const footerRight = inputFooter.createEl('div', { cls: 'kai-footer-right' });
+        const hintText = footerRight.createEl('span', { cls: 'kai-hint-text', text: 'Enter gönderir • Shift+Enter yeni satır' });
         // Options button: opens modal with AI response configuration
         const optionsBtn = footerLeft.createEl('span', { cls: 'kai-icon-btn', attr: { title: "AI Seçenekleri" } });
         setIcon(optionsBtn, 'sliders');
@@ -436,8 +456,9 @@ export class KaiChatView extends ItemView {
                 new Notice(t('operation_success') || 'Options updated');
             }).open();
         });
-        const sendButton = footerRight.createEl('button', { cls: 'kai-send-btn' });
-        setIcon(sendButton, 'arrow-up');
+        this.sendButton = footerRight.createEl('button', { cls: 'kai-send-btn' }) as HTMLButtonElement;
+        this.sendButton.disabled = true;
+        setIcon(this.sendButton, 'arrow-up');
 
         sendMessage = async () => {
             const text = this.inputField.value.trim();
@@ -481,7 +502,8 @@ export class KaiChatView extends ItemView {
             attachmentPreview.style.display = 'none';
             fileInput.value = '';
             
-            this.inputField.style.height = 'auto'; 
+            this.inputField.style.height = 'auto';
+            updateSendButtonState();
 
             const loading = this.appendLoading();
 
@@ -495,7 +517,8 @@ export class KaiChatView extends ItemView {
             }
         };
 
-        sendButton.addEventListener('click', sendMessage);
+        this.sendButton.addEventListener('click', sendMessage);
+        updateSendButtonState();
 
         this.inputField.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -508,9 +531,16 @@ export class KaiChatView extends ItemView {
 
     async appendMessage(role: 'user' | 'model', content: string, sources: {title: string, uri: string}[] = []) {
         const messageEl = this.chatContainer.createEl('div', { cls: `kai-message ${role}` });
-        
+        const bubble = messageEl.createEl('div', { cls: `kai-bubble ${role === 'user' ? 'user-bubble' : 'model-bubble'}` });
+
+        const bubbleMeta = bubble.createEl('div', { cls: 'kai-bubble-meta' });
+        bubbleMeta.createEl('span', { text: role === 'user' ? 'Sen' : 'Kai' });
+        bubbleMeta.createEl('span', { text: this.formatTimestamp() });
+
+        const contentEl = bubble.createEl('div', { cls: 'kai-bubble-content' });
+
         if (role === 'user') {
-            messageEl.createEl('div', { cls: 'kai-bubble user-bubble', text: content });
+            contentEl.textContent = content;
             
             const actions = messageEl.createEl('div', { cls: 'kai-msg-actions user-actions' });
             const editBtn = actions.createEl('button', { cls: 'kai-action-btn', attr: { title: t('btn_edit') || 'Düzenle' } });
@@ -530,10 +560,10 @@ export class KaiChatView extends ItemView {
                 this.inputField.focus();
                 this.inputField.style.height = 'auto';
                 this.inputField.style.height = Math.min(this.inputField.scrollHeight, 150) + 'px';
+                this.updateSendButtonState(this.sendButton);
             });
             
         } else {
-            const contentEl = messageEl.createEl('div', { cls: 'kai-model-content' });
             try {
                 await MarkdownRenderer.render(this.plugin.app, content, contentEl, '', this);
             } catch {

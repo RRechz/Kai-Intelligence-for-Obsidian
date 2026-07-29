@@ -54,8 +54,15 @@ export class KaiSettingTab extends PluginSettingTab {
         containerEl.empty();
         
         containerEl.createEl('h2', {text: 'Kai Intelligence'});
+        containerEl.createEl('p', {
+            text: 'Asistanın görünümünü ve davranışını buradan şekillendirebilirsin.',
+            cls: 'kai-settings-intro'
+        });
 
-        new Setting(containerEl)
+        const generalSection = containerEl.createEl('div', { cls: 'kai-settings-section' });
+        generalSection.createEl('h3', { text: 'Genel' });
+
+        new Setting(generalSection)
             .setName(t('settings_language') || 'Language')
             .setDesc(t('settings_language_desc') || 'Select plugin language.')
             .addDropdown(dropdown => dropdown
@@ -73,7 +80,10 @@ export class KaiSettingTab extends PluginSettingTab {
                     this.display();
                 }));
 
-        new Setting(containerEl)
+        const aiSection = containerEl.createEl('div', { cls: 'kai-settings-section' });
+        aiSection.createEl('h3', { text: 'AI davranışı' });
+
+        new Setting(aiSection)
             .setName(t('settings_api_key') || 'Gemini API Key')
             .setDesc(t('settings_api_key_desc') || 'Google AI Studio üzerinden aldığınız API anahtarını girin.')
             .addText(text => text
@@ -98,7 +108,10 @@ export class KaiSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        new Setting(containerEl)
+        const privacySection = containerEl.createEl('div', { cls: 'kai-settings-section' });
+        privacySection.createEl('h3', { text: 'Gizlilik' });
+
+        new Setting(privacySection)
             .setName('Google Search Bağlantısı')
             .setDesc('Kai\'nin güncel bilgilere ulaşmak için internette arama yapmasına izin ver.')
             .addToggle(toggle => toggle
@@ -108,7 +121,7 @@ export class KaiSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        new Setting(containerEl)
+        new Setting(privacySection)
             .setName('Dış Model Erişimi')
             .setDesc('Kai\'nin not içeriğinizi dışarıdaki bir API\'ye (örn. Gemini) göndermesine izin ver. Güvenlik ve gizlilik nedeniyle varsayılan olarak kapalıdır.')
             .addToggle(toggle => toggle
@@ -118,7 +131,7 @@ export class KaiSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        new Setting(containerEl)
+        new Setting(aiSection)
             .setName('Sistem Komutu (System Prompt)')
             .setDesc('Kai\'nin karakterini ve kurallarını belirleyen ana yönerge.')
             .addTextArea(text => {

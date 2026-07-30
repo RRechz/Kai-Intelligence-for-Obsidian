@@ -40,9 +40,25 @@ export const translations = {
         btn_copy: "Copy",
         btn_edit: "Edit",
         btn_sources: "Web Sources",
-            btn_short: "Short",
-            btn_medium: "Medium",
-            btn_long: "Long",
+        btn_short: "Short",
+        btn_medium: "Medium",
+        btn_long: "Long",
+        modal_options_title: "AI Options",
+        modal_options_length: "Response length",
+        modal_options_tone: "Tone",
+        modal_options_task: "Task",
+        modal_options_style: "Style",
+        modal_options_format: "Output format",
+        task_general: "General",
+        task_summarize: "Summarize",
+        task_rewrite: "Rewrite",
+        task_explain: "Explain",
+        task_translate: "Translate",
+        task_brainstorm: "Brainstorm",
+        style_balanced: "Balanced",
+        style_brief: "Brief",
+        style_detailed: "Detailed",
+        style_creative: "Creative",
         msg_copied: "Copied to clipboard",
         modal_sources_title: "Information Sources"
     },
@@ -85,9 +101,25 @@ export const translations = {
         btn_copy: "Kopyala",
         btn_edit: "Düzenle",
         btn_sources: "Kaynaklar",
-            btn_short: "Kısa",
-            btn_medium: "Orta",
-            btn_long: "Detaylı",
+        btn_short: "Kısa",
+        btn_medium: "Orta",
+        btn_long: "Detaylı",
+        modal_options_title: "AI Seçenekleri",
+        modal_options_length: "Yanıt uzunluğu",
+        modal_options_tone: "Ton",
+        modal_options_task: "Görev",
+        modal_options_style: "Stil",
+        modal_options_format: "Çıktı formatı",
+        task_general: "Genel",
+        task_summarize: "Özetle",
+        task_rewrite: "Düzenle",
+        task_explain: "Açıkla",
+        task_translate: "Çevir",
+        task_brainstorm: "Fikir üret",
+        style_balanced: "Dengeli",
+        style_brief: "Kısa",
+        style_detailed: "Detaylı",
+        style_creative: "Yaratıcı",
         msg_copied: "Panoya kopyalandı",
         modal_sources_title: "İnternet Kaynakları"
     },
@@ -159,14 +191,18 @@ export const translations = {
     }
 };
 
+type TranslationKey = keyof typeof translations.en;
+type TranslationMap = Record<TranslationKey, string>;
+
 let currentLanguage: SupportedLanguage = 'en'; // Default language
 
 export const setLanguage = (lang: SupportedLanguage) => {
     currentLanguage = lang;
 };
 
-export const t = (key: keyof typeof translations['en'], ...args: string[]): string => {
-    let text = (translations as any)[currentLanguage]?.[key] || translations['en'][key] || key;
+export const t = (key: TranslationKey, ...args: string[]): string => {
+    const selectedLocale = translations[currentLanguage] as TranslationMap | undefined;
+    let text = selectedLocale?.[key] ?? translations.en[key] ?? key;
     args.forEach((arg, index) => {
         text = text.replace(`{${index}}`, arg);
     });

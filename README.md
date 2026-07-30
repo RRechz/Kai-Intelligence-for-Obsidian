@@ -48,6 +48,17 @@ You can customize the plugin through its settings panel:
 - Select text in the editor and use the context menu actions for fast editing workflows.
 - Ask Kai to create a new note, rewrite existing content, or summarize selected text.
 
+## Manual QA checklist
+
+Use this checklist when verifying the latest beta build:
+
+- Open Kai from the ribbon icon and confirm the chat view opens correctly.
+- Press Enter to send a message and Shift+Enter to add a new line in the textarea.
+- Attach an image or PDF, send it, and confirm the preview is cleared after the request completes.
+- Open AI options, change task/style/format settings, and confirm the prompt instructions are applied.
+- Clear the chat history and confirm the empty state returns with a new welcome message.
+- Confirm the plugin still builds successfully after the changes.
+
 ## Development
 
 To build the plugin locally:

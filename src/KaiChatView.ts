@@ -1,6 +1,6 @@
 import { ItemView, WorkspaceLeaf, MarkdownRenderer, Notice, setIcon, Modal, App } from 'obsidian';
 import KaiIntelligencePlugin from './main';
-import { GeminiService, AttachmentData, ChatResponse } from './GeminiService';
+import { GeminiService, AttachmentData } from './GeminiService';
 import { t } from './Language';
 
 export const KAI_CHAT_VIEW_TYPE = "kai-chat-view";
@@ -159,7 +159,14 @@ class KaiHistoryModal extends Modal {
 }
 
 class KaiOptionsModal extends Modal {
-    options: { length: 'short'|'medium'|'long'; tone: 'concise'|'neutral'|'detailed'; includeSources: boolean; format: 'markdown'|'plain' };
+    options: {
+        length: 'short' | 'medium' | 'long';
+        tone: 'concise' | 'neutral' | 'detailed';
+        includeSources: boolean;
+        format: 'markdown' | 'plain';
+        task: 'general' | 'summarize' | 'rewrite' | 'explain' | 'translate' | 'brainstorm';
+        style: 'balanced' | 'brief' | 'detailed' | 'creative';
+    };
     onSave: (opts: any) => void;
 
     constructor(app: App, options: any, onSave: (opts: any) => void) {
@@ -171,36 +178,71 @@ class KaiOptionsModal extends Modal {
     onOpen() {
         const { contentEl } = this;
         contentEl.empty();
-        contentEl.createEl('h2', { text: 'AI Seçenekleri' });
+        contentEl.createEl('h2', { text: t('modal_options_title') || 'AI Options' });
 
-        // Length
-        contentEl.createEl('div', { text: 'Yanıt Uzunluğu', attr: { style: 'margin-top:8px; font-weight:600' } });
-        const lengths = ['short','medium','long'] as const;
-        const lengthLabels: any = { short: t('btn_short') || 'Short', medium: t('btn_medium') || 'Medium', long: t('btn_long') || 'Long' };
-        lengths.forEach(l => {
+        contentEl.createEl('div', { text: t('modal_options_length') || 'Response length', attr: { style: 'margin-top:8px; font-weight:600' } });
+        const lengths = ['short', 'medium', 'long'] as const;
+        const lengthLabels: Record<string, string> = { short: t('btn_short') || 'Short', medium: t('btn_medium') || 'Medium', long: t('btn_long') || 'Long' };
+        lengths.forEach((l) => {
             const id = `kai-opt-length-${l}`;
             const wrapper = contentEl.createEl('div', { attr: { style: 'margin:6px 0; display:flex; gap:8px; align-items:center;' } });
             const input = wrapper.createEl('input', { attr: { type: 'radio', name: 'kai-opt-length', id } }) as HTMLInputElement;
             if (this.options.length === l) input.checked = true;
             const label = wrapper.createEl('label', { attr: { for: id } });
-            label.textContent = lengthLabels[l];
+            label.textContent = lengthLabels[l] ?? l;
             input.addEventListener('change', () => { if (input.checked) this.options.length = l; });
         });
 
-        // Tone
-        contentEl.createEl('div', { text: 'Ton', attr: { style: 'margin-top:12px; font-weight:600' } });
-        const tones: any = { concise: 'Concise', neutral: 'Neutral', detailed: 'Detailed' };
+        contentEl.createEl('div', { text: t('modal_options_tone') || 'Tone', attr: { style: 'margin-top:12px; font-weight:600' } });
+        const tones: Record<string, string> = { concise: 'Concise', neutral: 'Neutral', detailed: 'Detailed' };
         Object.keys(tones).forEach((k) => {
             const id = `kai-opt-tone-${k}`;
             const wrapper = contentEl.createEl('div', { attr: { style: 'margin:6px 0; display:flex; gap:8px; align-items:center;' } });
             const input = wrapper.createEl('input', { attr: { type: 'radio', name: 'kai-opt-tone', id } }) as HTMLInputElement;
             if (this.options.tone === (k as any)) input.checked = true;
             const label = wrapper.createEl('label', { attr: { for: id } });
-            label.textContent = tones[k as any];
+            label.textContent = tones[k] ?? k;
             input.addEventListener('change', () => { if (input.checked) this.options.tone = k as any; });
         });
 
-        // Include sources
+        contentEl.createEl('div', { text: t('modal_options_task') || 'Task', attr: { style: 'margin-top:12px; font-weight:600' } });
+        const tasks = ['general', 'summarize', 'rewrite', 'explain', 'translate', 'brainstorm'] as const;
+        const taskLabels: Record<string, string> = {
+            general: t('task_general') || 'General',
+            summarize: t('task_summarize') || 'Summarize',
+            rewrite: t('task_rewrite') || 'Rewrite',
+            explain: t('task_explain') || 'Explain',
+            translate: t('task_translate') || 'Translate',
+            brainstorm: t('task_brainstorm') || 'Brainstorm'
+        };
+        tasks.forEach((task) => {
+            const id = `kai-opt-task-${task}`;
+            const wrapper = contentEl.createEl('div', { attr: { style: 'margin:6px 0; display:flex; gap:8px; align-items:center;' } });
+            const input = wrapper.createEl('input', { attr: { type: 'radio', name: 'kai-opt-task', id } }) as HTMLInputElement;
+            if (this.options.task === task) input.checked = true;
+            const label = wrapper.createEl('label', { attr: { for: id } });
+            label.textContent = taskLabels[task] ?? task;
+            input.addEventListener('change', () => { if (input.checked) this.options.task = task; });
+        });
+
+        contentEl.createEl('div', { text: t('modal_options_style') || 'Style', attr: { style: 'margin-top:12px; font-weight:600' } });
+        const styles = ['balanced', 'brief', 'detailed', 'creative'] as const;
+        const styleLabels: Record<string, string> = {
+            balanced: t('style_balanced') || 'Balanced',
+            brief: t('style_brief') || 'Brief',
+            detailed: t('style_detailed') || 'Detailed',
+            creative: t('style_creative') || 'Creative'
+        };
+        styles.forEach((style) => {
+            const id = `kai-opt-style-${style}`;
+            const wrapper = contentEl.createEl('div', { attr: { style: 'margin:6px 0; display:flex; gap:8px; align-items:center;' } });
+            const input = wrapper.createEl('input', { attr: { type: 'radio', name: 'kai-opt-style', id } }) as HTMLInputElement;
+            if (this.options.style === style) input.checked = true;
+            const label = wrapper.createEl('label', { attr: { for: id } });
+            label.textContent = styleLabels[style] ?? style;
+            input.addEventListener('change', () => { if (input.checked) this.options.style = style; });
+        });
+
         const srcWrapper = contentEl.createEl('div', { attr: { style: 'margin-top:12px; display:flex; gap:8px; align-items:center;' } });
         const srcToggle = srcWrapper.createEl('input', { attr: { type: 'checkbox', id: 'kai-opt-sources' } }) as HTMLInputElement;
         srcToggle.checked = !!this.options.includeSources;
@@ -208,20 +250,18 @@ class KaiOptionsModal extends Modal {
         srcLabel.textContent = t('btn_sources') || 'Include sources';
         srcToggle.addEventListener('change', () => { this.options.includeSources = srcToggle.checked; });
 
-        // Format
-        contentEl.createEl('div', { text: 'Çıktı Formatı', attr: { style: 'margin-top:12px; font-weight:600' } });
-        const formats: any = { markdown: 'Markdown', plain: 'Plain text' };
+        contentEl.createEl('div', { text: t('modal_options_format') || 'Output format', attr: { style: 'margin-top:12px; font-weight:600' } });
+        const formats: Record<string, string> = { markdown: 'Markdown', plain: 'Plain text' };
         Object.keys(formats).forEach((k) => {
             const id = `kai-opt-format-${k}`;
             const wrapper = contentEl.createEl('div', { attr: { style: 'margin:6px 0; display:flex; gap:8px; align-items:center;' } });
             const input = wrapper.createEl('input', { attr: { type: 'radio', name: 'kai-opt-format', id } }) as HTMLInputElement;
             if (this.options.format === (k as any)) input.checked = true;
             const label = wrapper.createEl('label', { attr: { for: id } });
-            label.textContent = formats[k as any];
+            label.textContent = formats[k] ?? k;
             input.addEventListener('change', () => { if (input.checked) this.options.format = k as any; });
         });
 
-        // Buttons
         const btnRow = contentEl.createEl('div', { attr: { style: 'margin-top:16px; display:flex; gap:8px; justify-content:flex-end;' } });
         const saveBtn = btnRow.createEl('button', { text: 'Save', cls: 'mod-cta' });
         const cancelBtn = btnRow.createEl('button', { text: 'Cancel' });
@@ -413,10 +453,13 @@ export class KaiChatView extends ItemView {
         }, 60);
 
         const updateSendButtonState = () => this.updateSendButtonState(this.sendButton);
-
-        this.inputField.addEventListener('input', () => {
+        const resizeTextarea = () => {
             this.inputField.style.height = 'auto';
             this.inputField.style.height = Math.min(this.inputField.scrollHeight, 150) + 'px';
+        };
+
+        this.inputField.addEventListener('input', () => {
+            resizeTextarea();
             updateSendButtonState();
         });
 
@@ -478,18 +521,12 @@ export class KaiChatView extends ItemView {
 
         const clearBtn = footerLeft.createEl('span', { cls: 'kai-icon-btn', attr: { title: "Bağlamı Sıfırla" } });
         setIcon(clearBtn, 'trash');
-        clearBtn.addEventListener('click', async () => {
-            await this.geminiService.clearHistory();
-            this.chatContainer.empty();
-            this.removeEmptyState();
-            await this.appendMessage('model', t('history_cleared_msg') || 'Bağlam sıfırlandı. Yeni not üzerinde konuşmaya hazırız!');
-            this.renderEmptyState();
-            new Notice(t('history_cleared_notice') || "Kai: Geçmiş temizlendi.");
+        clearBtn.addEventListener('click', () => {
+            void this.clearChatContext();
         });
 
         const footerRight = inputFooter.createEl('div', { cls: 'kai-footer-right' });
         const taskBadge = footerRight.createEl('span', { cls: 'kai-task-badge', text: 'Genel' });
-        const hintText = footerRight.createEl('span', { cls: 'kai-hint-text', text: 'Enter gönderir • Shift+Enter yeni satır' });
         // Options button: opens modal with AI response configuration
         const optionsBtn = footerLeft.createEl('span', { cls: 'kai-icon-btn', attr: { title: "AI Seçenekleri" } });
         setIcon(optionsBtn, 'sliders');
@@ -563,21 +600,30 @@ export class KaiChatView extends ItemView {
             }
         };
 
-        this.sendButton.addEventListener('click', sendMessage);
+        this.sendButton.addEventListener('click', () => {
+            void sendMessage();
+        });
         updateSendButtonState();
 
         this.inputField.addEventListener('keydown', (e) => {
+            if (e.isComposing) return;
+
             if (e.key === 'Escape') {
                 e.preventDefault();
                 this.inputField.value = '';
-                this.inputField.style.height = 'auto';
-                this.inputField.style.height = Math.min(this.inputField.scrollHeight, 150) + 'px';
+                resizeTextarea();
                 this.updateSendButtonState(this.sendButton);
                 return;
             }
-            if (e.key === 'Enter' && !e.shiftKey) {
+
+            if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
                 e.preventDefault();
-                sendMessage();
+                void sendMessage();
+                return;
+            }
+
+            if (e.key === 'Enter' && (e.shiftKey || e.metaKey || e.ctrlKey)) {
+                resizeTextarea();
             }
         });
         await this.appendMessage('model', t('chat_welcome') || 'Merhaba, ben Kai. İstersen aktif notunun üzerinden konuşabilir veya bana yeni bir soru sorabilirsin. (Geçmiş konuşmalar sol alttaki saat ikonunda)');
@@ -626,21 +672,8 @@ export class KaiChatView extends ItemView {
             const editBtn = actions.createEl('button', { cls: 'kai-action-btn', attr: { title: t('btn_edit') || 'Düzenle' } });
             setIcon(editBtn, 'pencil');
 
-            editBtn.addEventListener('click', async () => {
-                let nextSibling = messageEl.nextElementSibling;
-                while(nextSibling) {
-                    const toRemove = nextSibling;
-                    nextSibling = nextSibling.nextElementSibling;
-                    toRemove.remove();
-                }
-                messageEl.remove();
-
-                await this.geminiService.popHistoryUntil(content);
-                this.inputField.value = content;
-                this.inputField.focus();
-                this.inputField.style.height = 'auto';
-                this.inputField.style.height = Math.min(this.inputField.scrollHeight, 150) + 'px';
-                this.updateSendButtonState(this.sendButton);
+            editBtn.addEventListener('click', () => {
+                void this.handleEditMessage(messageEl, content);
             });
             
         } else {
@@ -655,7 +688,7 @@ export class KaiChatView extends ItemView {
             const copyBtn = actions.createEl('button', { cls: 'kai-action-btn', attr: { title: t('btn_copy') || 'Kopyala' } });
             setIcon(copyBtn, 'copy');
             copyBtn.addEventListener('click', () => {
-                navigator.clipboard.writeText(content);
+                void navigator.clipboard.writeText(content);
                 new Notice(t('msg_copied') || 'Panoya kopyalandı');
             });
 
@@ -671,6 +704,32 @@ export class KaiChatView extends ItemView {
         }
 
         this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
+    }
+
+    private async clearChatContext() {
+        await this.geminiService.clearHistory();
+        this.chatContainer.empty();
+        this.removeEmptyState();
+        await this.appendMessage('model', t('history_cleared_msg') || 'Bağlam sıfırlandı. Yeni not üzerinde konuşmaya hazırız!');
+        this.renderEmptyState();
+        new Notice(t('history_cleared_notice') || 'Kai: Geçmiş temizlendi.');
+    }
+
+    private async handleEditMessage(messageEl: HTMLElement, content: string) {
+        let nextSibling = messageEl.nextElementSibling;
+        while (nextSibling) {
+            const toRemove = nextSibling;
+            nextSibling = nextSibling.nextElementSibling;
+            toRemove.remove();
+        }
+        messageEl.remove();
+
+        await this.geminiService.popHistoryUntil(content);
+        this.inputField.value = content;
+        this.inputField.focus();
+        this.inputField.style.height = 'auto';
+        this.inputField.style.height = Math.min(this.inputField.scrollHeight, 150) + 'px';
+        this.updateSendButtonState(this.sendButton);
     }
 
     appendLoading() {

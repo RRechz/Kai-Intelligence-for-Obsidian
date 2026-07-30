@@ -334,6 +334,120 @@ export class KaiChatView extends ItemView {
         return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
 
+    private async streamTextEffect(contentEl: HTMLElement, content: string) {
+        const safeContent = content.replace(/\r\n/g, '\n');
+        const cursor = document.createElement('span');
+        cursor.className = 'kai-typing-cursor';
+        cursor.textContent = '▍';
+
+        contentEl.textContent = '';
+        contentEl.appendChild(cursor);
+
+        const chunks = this.buildStreamingChunks(safeContent);
+        let displayed = '';
+
+        for (const chunk of chunks) {
+            const delay = this.getChunkDelay(chunk);
+            displayed += chunk;
+            contentEl.innerHTML = '';
+            contentEl.insertAdjacentHTML('beforeend', this.buildMarkdownPreviewMarkup(displayed));
+            contentEl.appendChild(cursor);
+            await new Promise((resolve) => window.setTimeout(resolve, delay));
+            this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
+        }
+
+        cursor.remove();
+        try {
+            await MarkdownRenderer.render(this.plugin.app, safeContent, contentEl, '', this);
+        } catch {
+            contentEl.textContent = safeContent;
+        }
+    }
+
+    private buildStreamingChunks(content: string): string[] {
+        const lines = content.split('\n');
+        const chunks: string[] = [];
+
+        lines.forEach((line, index) => {
+            if (!line.trim()) {
+                chunks.push('\n');
+                return;
+            }
+
+            if (this.isMarkdownLine(line)) {
+                chunks.push(`${line}\n`);
+                return;
+            }
+
+            const words = line.trim().split(/(\s+)/).filter(Boolean);
+            for (let i = 0; i < words.length; i += 4) {
+                const block = words.slice(i, i + 4).join('');
+                chunks.push(`${block}${i + 4 < words.length ? ' ' : ''}`);
+            }
+
+            if (index < lines.length - 1) {
+                chunks.push('\n');
+            }
+        });
+
+        return chunks.filter((chunk) => chunk.length > 0);
+    }
+
+    private buildMarkdownPreviewMarkup(content: string): string {
+        const lines = content.split('\n');
+        return lines.map((line) => {
+            const trimmed = line.trim();
+            if (!trimmed) {
+                return '<div class="kai-markdown-preview-line kai-markdown-preview-space"></div>';
+            }
+
+            if (/^#{1,6}\s/.test(trimmed)) {
+                const level = trimmed.match(/^#+/)?.[0].length ?? 1;
+                const label = level === 1 ? 'H1' : level === 2 ? 'H2' : level === 3 ? 'H3' : 'H4';
+                const body = trimmed.replace(/^#{1,6}\s/, '');
+                return `<div class="kai-markdown-preview-line kai-markdown-preview-heading"><span class="kai-markdown-preview-badge">${label}</span><span class="kai-markdown-preview-inline">${this.renderInlineMarkdownPreview(body)}</span></div>`;
+            }
+
+            if (/^>\s/.test(trimmed)) {
+                return `<div class="kai-markdown-preview-line kai-markdown-preview-quote">${this.renderInlineMarkdownPreview(trimmed.replace(/^>\s/, ''))}</div>`;
+            }
+
+            if (/^[-*+]\s/.test(trimmed) || /^\d+\.\s/.test(trimmed)) {
+                return `<div class="kai-markdown-preview-line kai-markdown-preview-list">• ${this.renderInlineMarkdownPreview(trimmed.replace(/^[-*+]\s|^\d+\.\s/, ''))}</div>`;
+            }
+
+            if (/^```/.test(trimmed)) {
+                return `<div class="kai-markdown-preview-line kai-markdown-preview-code-block">${this.renderInlineMarkdownPreview(trimmed)}</div>`;
+            }
+
+            return `<div class="kai-markdown-preview-line">${this.renderInlineMarkdownPreview(trimmed)}</div>`;
+        }).join('');
+    }
+
+    private renderInlineMarkdownPreview(text: string): string {
+        const escaped = this.escapeHtml(text);
+        const withLinks = escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a class="kai-markdown-preview-link" href="$2">$1</a>');
+        const withCode = withLinks.replace(/`([^`]+)`/g, '<code class="kai-markdown-preview-code">$1</code>');
+        const withBold = withCode.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        return withBold.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    }
+
+    private escapeHtml(text: string): string {
+        return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    private isMarkdownLine(line: string): boolean {
+        const trimmed = line.trim();
+        return /^(#{1,6}\s|[-*+]\s|>\s|```|`[^`]+`|\*\*|__|\[[^\]]+\]\([^\)]+\))/.test(trimmed);
+    }
+
+    private getChunkDelay(chunk: string): number {
+        if (!chunk.trim()) return 40;
+        if (this.isMarkdownLine(chunk.trim())) return 10;
+        if (/^\s*$/.test(chunk)) return 40;
+        return chunk.split(/\s+/).length > 3 ? 20 : 35;
+    }
+
     private removeEmptyState() {
         this.emptyStateEl?.remove();
         this.emptyStateEl = undefined;
@@ -657,13 +771,15 @@ export class KaiChatView extends ItemView {
     async appendMessage(role: 'user' | 'model', content: string, sources: {title: string, uri: string}[] = []) {
         this.removeEmptyState();
         const messageEl = this.chatContainer.createEl('div', { cls: `kai-message ${role}` });
-        const bubble = messageEl.createEl('div', { cls: `kai-bubble ${role === 'user' ? 'user-bubble' : 'model-bubble'}` });
+        const container = role === 'user'
+            ? messageEl.createEl('div', { cls: 'kai-bubble user-bubble' })
+            : messageEl;
 
-        const bubbleMeta = bubble.createEl('div', { cls: 'kai-bubble-meta' });
+        const bubbleMeta = container.createEl('div', { cls: 'kai-bubble-meta' });
         bubbleMeta.createEl('span', { text: role === 'user' ? 'Sen' : 'Kai' });
         bubbleMeta.createEl('span', { text: this.formatTimestamp() });
 
-        const contentEl = bubble.createEl('div', { cls: 'kai-bubble-content' });
+        const contentEl = container.createEl('div', { cls: 'kai-bubble-content' });
 
         if (role === 'user') {
             contentEl.textContent = content;
@@ -677,11 +793,7 @@ export class KaiChatView extends ItemView {
             });
             
         } else {
-            try {
-                await MarkdownRenderer.render(this.plugin.app, content, contentEl, '', this);
-            } catch {
-                contentEl.textContent = content;
-            }
+            await this.streamTextEffect(contentEl, content);
 
             const actions = messageEl.createEl('div', { cls: 'kai-msg-actions model-actions' });
             

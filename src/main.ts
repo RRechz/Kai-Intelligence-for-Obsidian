@@ -59,6 +59,19 @@ export default class KaiIntelligencePlugin extends Plugin {
             }
         });
 
+        this.addCommand({
+            id: 'kai-propose-note-edit',
+            name: 'Kai: Notu Düzenle (Öneri)',
+            callback: async () => {
+                const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+                if (!view) return;
+                const editor = view.editor;
+                const noteText = editor.getValue();
+                if (!noteText.trim()) return;
+                await this.geminiService.processSelectedText(editor, 'Düzelt', noteText, 'replace', 'full');
+            }
+        });
+
         this.registerEvent(
             this.app.workspace.on('editor-menu', (menu, editor, view) => {
                 const selection = editor.getSelection();
@@ -97,6 +110,21 @@ export default class KaiIntelligencePlugin extends Plugin {
                     createSelectionAction('Kai: E-posta Haline Getir', 'mail', 'E-posta Haline Getir', 'email');
                     createSelectionAction('Kai: Not Taslağına Dönüştür', 'file-text', 'Not Taslağına Dönüştür', 'notes');
                 }
+
+                menu.addSeparator();
+                menu.addItem((item) => {
+                    item
+                        .setTitle('Kai: Notu Düzenle (Öneri)')
+                        .setIcon('sparkles')
+                        .onClick(async () => {
+                            const noteView = this.app.workspace.getActiveViewOfType(MarkdownView);
+                            if (!noteView) return;
+                            const noteEditor = noteView.editor;
+                            const fullText = noteEditor.getValue();
+                            if (!fullText.trim()) return;
+                            await this.geminiService.processSelectedText(noteEditor, 'Düzelt', fullText, 'replace', 'full');
+                        });
+                });
             })
         );
 

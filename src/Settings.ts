@@ -119,7 +119,7 @@ export class KaiSettingTab extends PluginSettingTab {
 
         new Setting(aiSection)
             .setName(t('settings_api_key') || 'Gemini API Key')
-            .setDesc(t('settings_api_key_desc') || 'Google AI Studio üzerinden aldığınız API anahtarını girin.')
+            .setDesc(t('settings_api_key_desc') || 'Google AI Studio üzerinden aldığınız Gemini API anahtarını girin. OAuth erişim tokenı değil, "AIza..." biçiminde bir anahtar olmalı.')
             .addText(text => text
                 .setPlaceholder('AIzaSy...')
                 .setValue(this.plugin.settings.apiKey)

@@ -250,6 +250,28 @@
     flex-shrink: 0;
 }
 
+.kai-diff-line {
+    color: var(--text-normal);
+}
+
+.kai-diff-removed {
+    color: #d64545;
+    text-decoration: line-through;
+    background: color-mix(in srgb, #d64545 14%, transparent);
+    padding: 2px 4px;
+    border-radius: 4px;
+    margin: 2px 0;
+}
+
+.kai-diff-added {
+    color: #1f8f4f;
+    font-weight: 600;
+    background: color-mix(in srgb, #1f8f4f 14%, transparent);
+    padding: 2px 4px;
+    border-radius: 4px;
+    margin: 2px 0;
+}
+
 /* YÜKLEME ANİMASYONLARI (10 Farklı) */
 .anim-spin svg { animation: ai-spin 1s linear infinite; }
 @keyframes ai-spin { 100% { transform: rotate(360deg); } }

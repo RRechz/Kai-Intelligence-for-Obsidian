@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI, Part } from '@google/generative-ai';
-import { App, MarkdownView, Editor, Notice } from 'obsidian';
+import { App, MarkdownView, Editor, Notice, Modal } from 'obsidian';
 import { KaiSettings } from './Settings';
 
 export interface AttachmentData {
@@ -11,6 +11,101 @@ export interface AttachmentData {
 export interface ChatResponse {
     text: string;
     sources: { title: string; uri: string }[];
+}
+
+class KaiEditProposalModal extends Modal {
+    private editor: Editor;
+    private originalText: string;
+    private proposedText: string;
+    private actionName: string;
+    private applyMode: 'selection' | 'full';
+
+    constructor(app: App, editor: Editor, originalText: string, proposedText: string, actionName: string, applyMode: 'selection' | 'full') {
+        super(app);
+        this.editor = editor;
+        this.originalText = originalText;
+        this.proposedText = proposedText;
+        this.actionName = actionName;
+        this.applyMode = applyMode;
+    }
+
+    private escapeHtml(value: string): string {
+        return value
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    private buildDiffHtml(originalText: string, proposedText: string): { originalHtml: string; proposedHtml: string } {
+        const originalLines = originalText.split('\n');
+        const proposedLines = proposedText.split('\n');
+        const lineCount = Math.max(originalLines.length, proposedLines.length);
+        const originalHtml: string[] = [];
+        const proposedHtml: string[] = [];
+
+        for (let i = 0; i < lineCount; i++) {
+            const originalLine = originalLines[i] ?? '';
+            const proposedLine = proposedLines[i] ?? '';
+
+            if (originalLine === proposedLine) {
+                const sharedLine = `<div class="kai-diff-line">${this.escapeHtml(originalLine)}</div>`;
+                originalHtml.push(sharedLine);
+                proposedHtml.push(sharedLine);
+                continue;
+            }
+
+            originalHtml.push(`<div class="kai-diff-removed">${this.escapeHtml(originalLine)}</div>`);
+            proposedHtml.push(`<div class="kai-diff-added">${this.escapeHtml(proposedLine)}</div>`);
+        }
+
+        return {
+            originalHtml: originalHtml.join(''),
+            proposedHtml: proposedHtml.join('')
+        };
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.setAttr('style', 'min-width: min(920px, 90vw); max-width: 1100px;');
+
+        contentEl.createEl('h2', { text: `Kai: ${this.actionName} Önizlemesi` });
+        contentEl.createEl('p', { text: 'Aşağıdaki değişiklikleri notta kullanmak için “Keep All” seçin. İsterseniz “Revert All” ile iptal edebilirsiniz.', attr: { style: 'margin-bottom: 12px; color: var(--text-muted);' } });
+
+        const previewWrapper = contentEl.createEl('div', { attr: { style: 'display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px;' } });
+        const originalPane = previewWrapper.createEl('div', { attr: { style: 'border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 10px; background: var(--background-secondary);' } });
+        originalPane.createEl('div', { text: 'Önceki Metin', attr: { style: 'font-weight: 600; margin-bottom: 8px;' } });
+        const originalPreview = originalPane.createEl('div', { attr: { style: 'white-space: pre-wrap; font-family: var(--font-monospace); font-size: 12px; max-height: 60vh; overflow: auto;' } });
+        originalPreview.innerHTML = this.buildDiffHtml(this.originalText, this.proposedText).originalHtml;
+
+        const proposedPane = previewWrapper.createEl('div', { attr: { style: 'border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 10px; background: var(--background-primary);' } });
+        proposedPane.createEl('div', { text: 'Önerilen Metin', attr: { style: 'font-weight: 600; margin-bottom: 8px;' } });
+        const proposedPreview = proposedPane.createEl('div', { attr: { style: 'white-space: pre-wrap; font-family: var(--font-monospace); font-size: 12px; max-height: 60vh; overflow: auto;' } });
+        proposedPreview.innerHTML = this.buildDiffHtml(this.originalText, this.proposedText).proposedHtml;
+
+        const buttonRow = contentEl.createEl('div', { attr: { style: 'display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;' } });
+        const keepButton = buttonRow.createEl('button', { text: 'Keep All', cls: 'mod-cta' });
+        const revertButton = buttonRow.createEl('button', { text: 'Revert All' });
+
+        keepButton.addEventListener('click', () => {
+            if (this.applyMode === 'full') {
+                this.editor.setValue(this.proposedText);
+            } else {
+                this.editor.replaceSelection(this.proposedText);
+            }
+            new Notice(`Kai: ${this.actionName} değişikliği uygulandı.`);
+            this.close();
+        });
+
+        revertButton.addEventListener('click', () => {
+            new Notice(`Kai: ${this.actionName} değişikliği iptal edildi.`);
+            this.close();
+        });
+    }
+
+    onClose() {
+        this.contentEl.empty();
+    }
 }
 
 export class GeminiService {
@@ -27,15 +122,44 @@ export class GeminiService {
         this.settings = settings;
         this.chatHistory = settings.chatHistory || [];
         this.saveHistoryCallback = saveHistoryCallback;
-        if (this.settings.apiKey && this.settings.allowExternalModel) {
-            this.genAI = new GoogleGenerativeAI(this.settings.apiKey);
+        const normalizedApiKey = this.getNormalizedApiKey(this.settings.apiKey);
+        this.settings.apiKey = normalizedApiKey;
+        if (normalizedApiKey && this.settings.allowExternalModel) {
+            this.genAI = new GoogleGenerativeAI(normalizedApiKey);
         }
+    }
+
+    private getNormalizedApiKey(value: string): string {
+        return (value || '')
+            .trim()
+            .replace(/^Bearer\s+/i, '')
+            .replace(/^['"]+|['"]+$/g, '');
+    }
+
+    private ensureValidApiKey(): string {
+        const normalizedApiKey = this.getNormalizedApiKey(this.settings.apiKey);
+        if (!normalizedApiKey) {
+            throw new Error('API Key eksik.');
+        }
+
+        if (/^ya29\./i.test(normalizedApiKey) || /^eyJ/i.test(normalizedApiKey) || /access_token/i.test(normalizedApiKey)) {
+            throw new Error('Bu değer bir OAuth erişim tokenı gibi görünüyor. Gemini için Google AI Studio üzerinden alınan gerçek API anahtarını kullanın.');
+        }
+
+        if (normalizedApiKey.startsWith('{') || normalizedApiKey.includes('client_email')) {
+            throw new Error('Bu değer bir JSON kimlik bilgisi gibi görünüyor. Gemini için "AIza..." biçiminde bir API anahtarı gerekli.');
+        }
+
+        this.settings.apiKey = normalizedApiKey;
+        return normalizedApiKey;
     }
 
     updateSettings(newSettings: KaiSettings) {
         this.settings = newSettings;
-        if (this.settings.apiKey && this.settings.allowExternalModel) {
-            this.genAI = new GoogleGenerativeAI(this.settings.apiKey);
+        const normalizedApiKey = this.getNormalizedApiKey(this.settings.apiKey);
+        this.settings.apiKey = normalizedApiKey;
+        if (normalizedApiKey && this.settings.allowExternalModel) {
+            this.genAI = new GoogleGenerativeAI(normalizedApiKey);
         } else {
             this.genAI = null;
         }
@@ -160,6 +284,106 @@ export class GeminiService {
         }
     }
 
+    private applyProposedText(editor: Editor, proposedText: string, applyMode: 'selection' | 'full') {
+        if (applyMode === 'full') {
+            editor.setValue(proposedText);
+        } else {
+            editor.replaceSelection(proposedText);
+        }
+    }
+
+    private showEditProposal(editor: Editor, originalText: string, proposedText: string, actionName: string, applyMode: 'selection' | 'full') {
+        new KaiEditProposalModal(this.app, editor, originalText, proposedText, actionName, applyMode).open();
+    }
+
+    private extractUrls(text: string): string[] {
+        const matches = text.matchAll(/(https?:\/\/|www\.)[^\s<>'")]+/gi);
+        const urls: string[] = [];
+
+        for (const match of matches) {
+            let url = match[0].replace(/[.,;:!?)]$/g, '').trim();
+            if (url.startsWith('www.')) {
+                url = `https://${url}`;
+            }
+            if (!urls.includes(url)) {
+                urls.push(url);
+            }
+        }
+
+        return urls;
+    }
+
+    private decodeHtmlEntities(value: string): string {
+        return value
+            .replace(/&nbsp;/gi, ' ')
+            .replace(/&amp;/gi, '&')
+            .replace(/&lt;/gi, '<')
+            .replace(/&gt;/gi, '>')
+            .replace(/&quot;/gi, '"')
+            .replace(/&#39;/gi, "'")
+            .replace(/&#x27;/gi, "'");
+    }
+
+    private extractTextFromHtml(html: string): string {
+        const withoutScripts = html.replace(/<script[\s\S]*?<\/script>/gi, ' ');
+        const withoutStyles = withoutScripts.replace(/<style[\s\S]*?<\/style>/gi, ' ');
+        const withoutComments = withoutStyles.replace(/<!--[\s\S]*?-->/g, ' ');
+        const plainText = withoutComments
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<(p|div|section|article|li|ul|ol|h[1-6]|tr|table|header|footer|main)\b[^>]*>/gi, '\n')
+            .replace(/<[^>]+>/g, ' ');
+
+        return this.decodeHtmlEntities(plainText)
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    private async fetchUrlContent(url: string): Promise<{ title: string; content: string } | null> {
+        try {
+            const response = await fetch(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (compatible; Kai-Intelligence/1.0; +https://obsidian.md)'
+                }
+            });
+
+            if (!response.ok) {
+                return null;
+            }
+
+            const html = await response.text();
+            const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+            const title = this.decodeHtmlEntities((titleMatch?.[1] || url).replace(/\s+/g, ' ').trim());
+            const content = this.extractTextFromHtml(html);
+
+            return {
+                title: title || url,
+                content: content.slice(0, 8000)
+            };
+        } catch (error) {
+            return null;
+        }
+    }
+
+    private async buildUrlResearchContext(userText: string): Promise<string> {
+        const urls = this.extractUrls(userText);
+        if (urls.length === 0) {
+            return '';
+        }
+
+        const urlSummaries: string[] = [];
+        for (const url of urls) {
+            const result = await this.fetchUrlContent(url);
+            if (!result) {
+                urlSummaries.push(`URL: ${url}\nDurum: Sayfa içeriği alınamadı.`);
+                continue;
+            }
+
+            urlSummaries.push(`URL: ${url}\nBaşlık: ${result.title}\nİçerik Özeti:\n${result.content || 'İçerik bulunamadı.'}`);
+        }
+
+        return `Kullanıcı aşağıdaki URL'leri paylaştı. Aşağıdaki sayfa içeriklerini dikkate alarak cevap ver:\n\n${urlSummaries.join('\n\n')}`;
+    }
+
     private injectContext(userText: string, activeView: MarkdownView | null): string {
         if (!activeView) return userText;
         const noteContent = activeView.editor.getValue();
@@ -281,8 +505,8 @@ export class GeminiService {
 
     async processChatMessage(userText: string, attachment?: AttachmentData): Promise<ChatResponse> {
         if (!this.settings.allowExternalModel) throw new Error('Dış model erişimi kapalı. Ayarlar -> Dış Model Erişimi açın.');
-        if (!this.settings.apiKey) throw new Error("API Key eksik.");
-        if (!this.genAI) this.genAI = new GoogleGenerativeAI(this.settings.apiKey);
+        const normalizedApiKey = this.ensureValidApiKey();
+        if (!this.genAI) this.genAI = new GoogleGenerativeAI(normalizedApiKey);
 
         const activeView = this.getActiveMarkdownView();
         const detectedBehavior = this.inferTaskAndStyle(userText, activeView);
@@ -290,7 +514,12 @@ export class GeminiService {
         const fileInstruction = this.getFileContextInstruction(activeView, detectedBehavior.task);
         this.persistPreferredBehavior(detectedBehavior.task, detectedBehavior.style);
 
+        const urlResearchContext = await this.buildUrlResearchContext(userText);
         let finalMessageText = this.injectContext(userText, activeView);
+        if (urlResearchContext) {
+            finalMessageText = `${urlResearchContext}\n\n${finalMessageText}`;
+        }
+
         const extraInstructions = [behaviorInstruction, fileInstruction].filter(Boolean);
         if (extraInstructions.length > 0) {
             finalMessageText = `${extraInstructions.join('\n\n')}\n\n${finalMessageText}`;
@@ -334,7 +563,12 @@ export class GeminiService {
         try {
             response = await chatSession.sendMessage(finalPayload);
         } catch (error: any) {
-            throw new Error(`API Hatası: ${error.message}`);
+            const message = error?.message || '';
+            const lowerMessage = message.toLowerCase();
+            if (lowerMessage.includes('401') || lowerMessage.includes('unauth') || lowerMessage.includes('auth')) {
+                throw new Error('Kimlik doğrulama başarısız. Google AI Studio’dan aldığın gerçek Gemini API anahtarını kullandığından emin ol. Anahtarın "AIza..." biçiminde olması gerekir.');
+            }
+            throw new Error(`API Hatası: ${message}`);
         }
         
         let toolExecuted = false;
@@ -399,48 +633,48 @@ export class GeminiService {
         };
     }
 
-    async generateSelectionTransform(action: string, selectedText: string, outputFormat: string = 'replace'): Promise<string> {
+    async generateSelectionTransform(action: string, selectedText: string, outputFormat: string = 'replace', applyMode: 'selection' | 'full' = 'selection'): Promise<string> {
         if (!this.settings.allowExternalModel) {
             throw new Error('Dış model erişimi kapalı. Ayarlar -> Dış Model Erişimi açın.');
         }
 
-        if (!this.settings.apiKey) {
-            throw new Error('Lütfen ayarlardan Gemini API anahtarını girin.');
-        }
-
-        if (!this.genAI) this.genAI = new GoogleGenerativeAI(this.settings.apiKey);
-
-        const activeView = this.getActiveMarkdownView();
-        const noteContext = activeView?.editor.getValue().trim() ? `\n\nAktif not bağlamı:\n${activeView.editor.getValue().slice(0, 2500)}` : '';
+        const normalizedApiKey = this.ensureValidApiKey();
+        if (!this.genAI) this.genAI = new GoogleGenerativeAI(normalizedApiKey);
 
         const model = this.genAI.getGenerativeModel({
             model: this.settings.model,
             systemInstruction: "Sen profesyonel bir editör ve içerik düzenleyicisin. Sadece istenen işlemi yap, gereksiz açıklama ekleme ve sonucu net bir biçimde ver."
         });
 
+        const sourceText = (selectedText || '').trim();
+        const isFullMode = applyMode === 'full';
+        const modeInstruction = isFullMode
+            ? 'Sadece düzenlenmiş not içeriğini ver. Ekstra açıklama, başlık veya özet ekleme.'
+            : 'Sadece verilen metnin dönüştürülmüş halini ver. Metnin dışına çıkma; ekstra açıklama ekleme.';
+
         let prompt = '';
         const normalizedOutput = outputFormat.toLowerCase();
 
         if (action === 'Düzelt') {
-            prompt = `Aşağıdaki metnin dilbilgisini, noktalama işaretlerini ve akıcılığını düzelt. Sonucu yalnızca düzeltilmiş metin olarak ver.\n\n${selectedText}${noteContext}`;
+            prompt = `Aşağıdaki metnin dilbilgisini, noktalama işaretlerini ve akıcılığını düzelt. ${modeInstruction}\n\n${sourceText}`;
         } else if (action === 'Özetle') {
-            prompt = `Aşağıdaki metni kısa ve net bir özet halinde yaz.\n\n${selectedText}${noteContext}`;
+            prompt = `Aşağıdaki metni kısa ve net bir özet halinde yaz. ${modeInstruction}\n\n${sourceText}`;
         } else if (action === 'Çevir') {
-            prompt = `Aşağıdaki metni doğal ve doğru bir şekilde hedef dile çevir.\n\n${selectedText}${noteContext}`;
+            prompt = `Aşağıdaki metni doğal ve doğru bir şekilde hedef dile çevir. ${modeInstruction}\n\n${sourceText}`;
         } else if (action === 'Açıkla') {
-            prompt = `Aşağıdaki metni anlaşılır, detaylı ve sade bir dille açıkla.\n\n${selectedText}${noteContext}`;
+            prompt = `Aşağıdaki metni anlaşılır, detaylı ve sade bir dille açıkla. ${modeInstruction}\n\n${sourceText}`;
         } else if (action === 'Kısalt') {
-            prompt = `Aşağıdaki metni çok daha kısa, öz ve akıcı bir versiyona indir.\n\n${selectedText}${noteContext}`;
+            prompt = `Aşağıdaki metni çok daha kısa, öz ve akıcı bir versiyona indir. ${modeInstruction}\n\n${sourceText}`;
         } else if (action === 'Resmileştir') {
-            prompt = `Aşağıdaki metni daha resmi, profesyonel ve akıcı bir tona getir.\n\n${selectedText}${noteContext}`;
+            prompt = `Aşağıdaki metni daha resmi, profesyonel ve akıcı bir tona getir. ${modeInstruction}\n\n${sourceText}`;
         } else if (action === 'Maddeye Dönüştür') {
-            prompt = `Aşağıdaki metni kısa madde maddeler halinde düzenle.\n\n${selectedText}${noteContext}`;
+            prompt = `Aşağıdaki metni kısa madde maddeler halinde düzenle. ${modeInstruction}\n\n${sourceText}`;
         } else if (action === 'E-posta Haline Getir') {
-            prompt = `Aşağıdaki metni kısa ve profesyonel bir e-posta metnine dönüştür.\n\n${selectedText}${noteContext}`;
+            prompt = `Aşağıdaki metni kısa ve profesyonel bir e-posta metnine dönüştür. ${modeInstruction}\n\n${sourceText}`;
         } else if (action === 'Not Taslağına Dönüştür') {
-            prompt = `Aşağıdaki metni temiz bir not taslağına dönüştür. Başlıklar, maddeler ve kısa açıklamalar kullan.\n\n${selectedText}${noteContext}`;
+            prompt = `Aşağıdaki metni temiz bir not taslağına dönüştür. Başlıklar, maddeler ve kısa açıklamalar kullan. ${modeInstruction}\n\n${sourceText}`;
         } else {
-            prompt = `Aşağıdaki metni istenen şekilde düzenle.\n\n${selectedText}${noteContext}`;
+            prompt = `Aşağıdaki metni istenen şekilde düzenle. ${modeInstruction}\n\n${sourceText}`;
         }
 
         if (normalizedOutput === 'bullets') {
@@ -457,11 +691,17 @@ export class GeminiService {
         return response.response.text().trim();
     }
 
-    async processSelectedText(editor: Editor, action: string, selectedText: string, outputFormat: string = 'replace'): Promise<void> {
+    async processSelectedText(editor: Editor, action: string, selectedText: string, outputFormat: string = 'replace', applyMode: 'selection' | 'full' = 'selection', showProposal: boolean = true): Promise<void> {
         try {
-            const resultText = await this.generateSelectionTransform(action, selectedText, outputFormat);
-            if (resultText) {
-                editor.replaceSelection(resultText);
+            const resultText = await this.generateSelectionTransform(action, selectedText, outputFormat, applyMode);
+            if (!resultText) {
+                return;
+            }
+
+            if (showProposal) {
+                this.showEditProposal(editor, selectedText, resultText, action, applyMode);
+            } else {
+                this.applyProposedText(editor, resultText, applyMode);
                 new Notice(`Kai: İşlem başarıyla tamamlandı (${action}).`);
             }
         } catch (error: any) {
